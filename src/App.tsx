@@ -1,9 +1,11 @@
 import { useEffect, useCallback, useState } from 'react'
 import { ExcalidrawCanvas } from '@/components/Canvas/ExcalidrawCanvas'
 import { ContextMenu } from '@/components/UI/ContextMenu'
+import { ChatPanel } from '@/components/UI/ChatPanel'
 import { aiService } from '@/services/aiService'
-import { updateWording, makeConcise, improveClarity, expandConcept, suggestConnections } from '@/services/aiActions'
+import { updateWording, makeConcise, improveClarity, expandConcept, suggestConnections, explainDiagram, summarizeDiagram } from '@/services/aiActions'
 import { useSelection } from '@/hooks/useSelection'
+import { useChatStore } from '@/store/chatStore'
 import { showAIChangeFeedback, showAIActionToast } from '@/utils/visualFeedback'
 import type { ExcalidrawElement } from '@/types'
 
@@ -178,15 +180,48 @@ function App() {
           break
 
         case 'summarize':
-          console.log('Summarize action - coming soon')
+          setIsProcessing(true)
+          console.log('Summarizing with AI...')
+          try {
+            const result = await summarizeDiagram(selectedElements, allElements)
+            if (result.success) {
+              // Open chat and display summary
+              useChatStore.getState().openChat()
+              useChatStore.getState().addMessage({
+                role: 'assistant',
+                content: `**Summary:** ${result.summary}\n\n**Key Points:**\n${result.keyPoints.map(p => `• ${p}`).join('\n')}`,
+              })
+            } else {
+              showAIActionToast(result.error || 'Failed to summarize', 'error')
+            }
+          } finally {
+            setIsProcessing(false)
+          }
           break
 
         case 'explain':
-          console.log('Explain action - coming soon')
+          setIsProcessing(true)
+          console.log('Explaining diagram with AI...')
+          try {
+            const result = await explainDiagram(selectedElements, allElements)
+            if (result.success) {
+              // Open chat and display explanation
+              useChatStore.getState().openChat()
+              useChatStore.getState().addMessage({
+                role: 'assistant',
+                content: result.explanation,
+              })
+            } else {
+              showAIActionToast(result.error || 'Failed to explain', 'error')
+            }
+          } finally {
+            setIsProcessing(false)
+          }
           break
 
         case 'ask-ai':
-          console.log('Ask AI action - will open dialog in future phase')
+          // Open chat panel for AI conversation
+          useChatStore.getState().openChat()
           break
 
         default:
@@ -203,10 +238,44 @@ function App() {
     }
   }, [selection.hasSelection, selection.count, selection.categories])
 
+  const isChatOpen = useChatStore((state) => state.isOpen)
+  const toggleChat = useChatStore((state) => state.toggleChat)
+
   return (
     <div className="app">
       <ExcalidrawCanvas />
       <ContextMenu onAction={handleContextMenuAction} />
+      <ChatPanel />
+
+      {/* AI Chat Toggle Button */}
+      <button
+        className="chat-toggle-button"
+        onClick={toggleChat}
+        title={isChatOpen ? 'Close AI Chat' : 'Open AI Chat'}
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: isChatOpen ? '400px' : '20px',
+          width: '50px',
+          height: '50px',
+          borderRadius: '50%',
+          background: '#0066cc',
+          color: 'white',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '24px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 999,
+          transition: 'right 0.3s ease, transform 0.2s ease',
+        }}
+        onMouseOver={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
+        onMouseOut={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+      >
+        {isChatOpen ? '✕' : '💬'}
+      </button>
     </div>
   )
 }

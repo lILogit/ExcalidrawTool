@@ -677,3 +677,173 @@ Example: [{"from": "id1", "to": "id2", "reason": "causes"}, {"from": "id2", "to"
     }
   }
 }
+
+/**
+ * Result of explain diagram action
+ */
+export interface ExplainResult {
+  success: boolean
+  explanation: string
+  error?: string
+}
+
+/**
+ * Explain selected elements or the entire diagram
+ */
+export async function explainDiagram(
+  elements: ExcalidrawElement[],
+  allElements: ExcalidrawElement[]
+): Promise<ExplainResult> {
+  if (!aiService.isConfigured()) {
+    return {
+      success: false,
+      explanation: '',
+      error: 'AI service not configured. Set VITE_ANTHROPIC_API_KEY.',
+    }
+  }
+
+  // Get text content for elements
+  const targetElements = elements.length > 0 ? elements : allElements
+  const elementData = targetElements.map(e => ({
+    id: e.id,
+    text: getElementText(e, allElements) || `[${e.type}]`,
+    type: e.type,
+  }))
+
+  if (elementData.length === 0) {
+    return {
+      success: false,
+      explanation: '',
+      error: 'No elements to explain',
+    }
+  }
+
+  const EXPLAIN_PROMPT = `You are an AI assistant helping users understand visual diagrams.
+Analyze the given elements and provide a clear explanation of what the diagram represents.
+
+Rules:
+- Be concise but thorough
+- Identify relationships between elements
+- Explain the overall purpose or flow
+- Use simple language`
+
+  try {
+    const elementsDescription = elementData
+      .map(e => `- ${e.type}: "${e.text}"`)
+      .join('\n')
+
+    const messages: AIMessage[] = [
+      {
+        role: 'user',
+        content: `Explain this diagram:\n${elementsDescription}`,
+      },
+    ]
+
+    const response = await aiService.sendMessage(messages, EXPLAIN_PROMPT)
+
+    return {
+      success: true,
+      explanation: response.content.trim(),
+    }
+  } catch (error) {
+    return {
+      success: false,
+      explanation: '',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+/**
+ * Result of summarize action
+ */
+export interface SummarizeResult {
+  success: boolean
+  summary: string
+  keyPoints: string[]
+  error?: string
+}
+
+/**
+ * Summarize selected elements or the entire diagram
+ */
+export async function summarizeDiagram(
+  elements: ExcalidrawElement[],
+  allElements: ExcalidrawElement[]
+): Promise<SummarizeResult> {
+  if (!aiService.isConfigured()) {
+    return {
+      success: false,
+      summary: '',
+      keyPoints: [],
+      error: 'AI service not configured. Set VITE_ANTHROPIC_API_KEY.',
+    }
+  }
+
+  // Get text content for elements
+  const targetElements = elements.length > 0 ? elements : allElements
+  const elementData = targetElements.map(e => ({
+    id: e.id,
+    text: getElementText(e, allElements) || '',
+    type: e.type,
+  })).filter(e => e.text)
+
+  if (elementData.length === 0) {
+    return {
+      success: false,
+      summary: '',
+      keyPoints: [],
+      error: 'No elements with text to summarize',
+    }
+  }
+
+  const SUMMARIZE_PROMPT = `You are an AI assistant helping users summarize visual diagrams.
+Analyze the given elements and provide a concise summary with key points.
+
+Rules:
+- Create a brief 1-2 sentence summary
+- Extract 3-5 key points
+- Focus on the main ideas and relationships
+
+Respond with ONLY a JSON object in this format:
+{"summary": "Brief summary here", "keyPoints": ["Point 1", "Point 2", "Point 3"]}`
+
+  try {
+    const elementsDescription = elementData
+      .map(e => `- ${e.type}: "${e.text}"`)
+      .join('\n')
+
+    const messages: AIMessage[] = [
+      {
+        role: 'user',
+        content: `Summarize this diagram:\n${elementsDescription}`,
+      },
+    ]
+
+    const response = await aiService.sendMessage(messages, SUMMARIZE_PROMPT)
+
+    // Parse the JSON response
+    try {
+      const result = JSON.parse(response.content.trim())
+      return {
+        success: true,
+        summary: result.summary || '',
+        keyPoints: result.keyPoints || [],
+      }
+    } catch {
+      // If JSON parsing fails, return the raw text as summary
+      return {
+        success: true,
+        summary: response.content.trim(),
+        keyPoints: [],
+      }
+    }
+  } catch (error) {
+    return {
+      success: false,
+      summary: '',
+      keyPoints: [],
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}

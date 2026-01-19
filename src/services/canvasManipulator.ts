@@ -299,6 +299,7 @@ class CanvasManipulator {
 
   /**
    * Add a connection (arrow) between two elements
+   * Removes any existing arrows between the same elements first
    */
   addConnection(
     fromId: string,
@@ -311,6 +312,33 @@ class CanvasManipulator {
     if (!fromElement || !toElement) {
       console.error('Cannot create connection: element not found')
       return null
+    }
+
+    // Find and remove any existing arrows between these elements
+    const existingArrows = this.getElements().filter((e) => {
+      if (e.type !== 'arrow' || e.isDeleted) return false
+      const arrow = e as ExcalidrawElement & { startBinding?: { elementId: string }; endBinding?: { elementId: string } }
+      // Check if arrow connects these two elements in either direction
+      const connectsFromTo = arrow.startBinding?.elementId === fromId && arrow.endBinding?.elementId === toId
+      const connectsToFrom = arrow.startBinding?.elementId === toId && arrow.endBinding?.elementId === fromId
+      return connectsFromTo || connectsToFrom
+    })
+
+    // Delete existing arrows and their bound text labels
+    if (existingArrows.length > 0) {
+      const idsToDelete: string[] = []
+      existingArrows.forEach((arrow) => {
+        idsToDelete.push(arrow.id)
+        // Also delete any bound text (labels)
+        if (arrow.boundElements) {
+          arrow.boundElements.forEach((bound) => {
+            if (bound.type === 'text') {
+              idsToDelete.push(bound.id)
+            }
+          })
+        }
+      })
+      this.deleteElements(idsToDelete)
     }
 
     // Calculate center points

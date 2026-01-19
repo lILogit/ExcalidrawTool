@@ -1,6 +1,6 @@
 import type { AIMessage, AIResponse, AIStreamChunk, AIServiceConfig } from '@/types'
 
-const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022'
+const DEFAULT_MODEL = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'
 const DEFAULT_MAX_TOKENS = 4096
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 
