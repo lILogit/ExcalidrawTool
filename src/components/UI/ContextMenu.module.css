@@ -1,0 +1,127 @@
+.contextMenu {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 13px;
+  min-width: 200px;
+  max-width: 280px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  animation: fadeIn 0.1s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.menuContent {
+  padding: 4px 0;
+}
+
+.sectionHeader {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: #1f2937;
+  transition: background-color 0.1s ease;
+}
+
+.menuItem:hover:not(:disabled) {
+  background-color: #f3f4f6;
+}
+
+.menuItem:active:not(:disabled) {
+  background-color: #e5e7eb;
+}
+
+.menuItem.disabled {
+  color: #9ca3af;
+  cursor: default;
+}
+
+.icon {
+  width: 20px;
+  margin-right: 8px;
+  font-size: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcut {
+  margin-left: 16px;
+  font-size: 11px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.divider {
+  height: 1px;
+  margin: 4px 8px;
+  background-color: #e5e7eb;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .contextMenu {
+    background: #1f2937;
+    border-color: #374151;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .sectionHeader {
+    color: #9ca3af;
+  }
+
+  .menuItem {
+    color: #f3f4f6;
+  }
+
+  .menuItem:hover:not(:disabled) {
+    background-color: #374151;
+  }
+
+  .menuItem:active:not(:disabled) {
+    background-color: #4b5563;
+  }
+
+  .menuItem.disabled {
+    color: #6b7280;
+  }
+
+  .shortcut {
+    color: #6b7280;
+  }
+
+  .divider {
+    background-color: #374151;
+  }
+}
