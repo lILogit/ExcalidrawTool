@@ -4,41 +4,9 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { aiService } from '@/services/aiService'
 import { serializeSelectionForAI } from '@/utils/elementUtils'
 import { executeActions, parseAIResponse } from '@/services/actionParser'
+import { CHAT_SYSTEM_PROMPT } from '@/config/prompts'
 import type { AIMessage } from '@/types'
 import styles from './ChatPanel.module.css'
-
-const CHAT_SYSTEM_PROMPT = `You are an AI assistant helping users work with visual diagrams in Excalidraw.
-You can help users by:
-1. Explaining what's on their canvas
-2. Suggesting improvements to their diagrams
-3. Creating new elements based on their requests
-4. Answering questions about their content
-
-When the user asks you to CREATE or MODIFY elements on the canvas, respond with a JSON block containing actions:
-\`\`\`json
-{
-  "actions": [
-    { "type": "add_rectangle", "position": { "x": 100, "y": 100 }, "size": { "width": 150, "height": 80 } },
-    { "type": "add_text", "text": "My Label", "position": { "x": 110, "y": 130 } },
-    { "type": "add_connection", "fromId": "element1", "toId": "element2", "label": "relates to" }
-  ],
-  "explanation": "I've created a new rectangle with a label."
-}
-\`\`\`
-
-Available action types:
-- add_rectangle, add_ellipse, add_diamond: { position: {x, y}, size: {width, height}, style?: {backgroundColor, strokeColor} }
-- add_text: { text, position: {x, y}, style?: {fontSize} }
-- add_connection: { fromId, toId, label? }
-- add_arrow: { from: {x, y} | elementId, to: {x, y} | elementId }
-- update_text: { targetId, text }
-- update_style: { targetId, style: {backgroundColor, strokeColor, ...} }
-- delete_element: { targetId }
-- move_element: { targetId, position?: {x, y}, delta?: {x, y} }
-
-For questions or explanations, just respond with text normally.
-
-Current canvas context will be provided with each message.`
 
 export function ChatPanel() {
   const { isOpen, messages, isLoading, addMessage, setLoading, setError } = useChatStore()

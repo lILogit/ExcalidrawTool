@@ -150,15 +150,53 @@ class CanvasManipulator {
   /**
    * Add a rectangle element
    */
-  addRectangle(geometry: ElementGeometry, style?: ElementStyle): string {
-    const element = {
+  addRectangle(geometry: ElementGeometry, style?: ElementStyle, options?: { text?: string }): string {
+    const rectangleId = generateId()
+    const rectangle = {
       ...this.createBaseElement('rectangle', geometry, style),
+      id: rectangleId,
     } as ExcalidrawElement
 
-    const elements = [...this.getElements(), element]
+    const newElements: ExcalidrawElement[] = []
+
+    // If text is provided, create bound text inside the rectangle
+    if (options?.text) {
+      const textId = generateId()
+      const textElement = {
+        ...this.createBaseElement('text', {
+          x: geometry.x + (geometry.width || 100) / 2,
+          y: geometry.y + (geometry.height || 100) / 2,
+          width: (geometry.width || 100) - 20,
+          height: 20,
+        }),
+        id: textId,
+        type: 'text',
+        text: options.text,
+        originalText: options.text,
+        fontSize: 16,
+        fontFamily: 1,
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        containerId: rectangleId,
+        autoResize: true,
+        lineHeight: 1.25,
+      } as unknown as ExcalidrawElement
+
+      // Update rectangle to reference bound text
+      const rectangleWithBoundText = {
+        ...rectangle,
+        boundElements: [{ id: textId, type: 'text' as const }],
+      } as ExcalidrawElement
+
+      newElements.push(rectangleWithBoundText, textElement)
+    } else {
+      newElements.push(rectangle)
+    }
+
+    const elements = [...this.getElements(), ...newElements]
     this.getAPI().updateScene({ elements })
 
-    return element.id
+    return rectangleId
   }
 
   /**

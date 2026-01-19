@@ -3,21 +3,17 @@ import { useCanvasStore } from '@/store/canvasStore'
 import { getElementText } from '@/utils/elementUtils'
 import { executeActions, type CanvasAction } from './actionParser'
 import { calculateBranchPosition } from '@/utils/layoutUtils'
+import {
+  TEXT_IMPROVEMENT_PROMPT,
+  CONCISE_PROMPT,
+  CLARITY_PROMPT,
+  CONNECTIONS_PROMPT,
+  EXPLAIN_PROMPT,
+  SUMMARIZE_PROMPT,
+  getExpandPrompt,
+} from '@/config/prompts'
 import type { ExcalidrawElement } from '@/types'
 import type { AIMessage } from '@/types'
-
-/**
- * System prompt for text improvement actions
- */
-const TEXT_IMPROVEMENT_PROMPT = `You are an AI assistant helping users improve text in visual diagrams.
-Your task is to improve the wording of text elements while:
-- Keeping the same meaning and intent
-- Making text clearer and more concise
-- Using professional language appropriate for diagrams
-- Preserving any technical terms
-
-Respond with ONLY the improved text, nothing else. No explanations, no quotes, just the improved text.
-If the text is already good, return it unchanged.`
 
 /**
  * Result of an AI action
@@ -211,15 +207,6 @@ export async function makeConcise(
   elements: ExcalidrawElement[],
   allElements: ExcalidrawElement[]
 ): Promise<AIActionResult[]> {
-  const CONCISE_PROMPT = `You are an AI assistant helping users make text more concise in visual diagrams.
-Your task is to shorten the text while preserving the core meaning.
-- Remove unnecessary words
-- Use shorter alternatives
-- Keep essential information
-- Aim for 50% or less of the original length when possible
-
-Respond with ONLY the shortened text, nothing else.`
-
   if (!aiService.isConfigured()) {
     return elements.map((e) => ({
       success: false,
@@ -292,15 +279,6 @@ export async function improveClarity(
   elements: ExcalidrawElement[],
   allElements: ExcalidrawElement[]
 ): Promise<AIActionResult[]> {
-  const CLARITY_PROMPT = `You are an AI assistant helping users improve text clarity in visual diagrams.
-Your task is to rewrite the text to be clearer and easier to understand.
-- Use simpler words when possible
-- Improve sentence structure
-- Remove ambiguity
-- Keep technical terms if they're important
-
-Respond with ONLY the improved text, nothing else.`
-
   if (!aiService.isConfigured()) {
     return elements.map((e) => ({
       success: false,
@@ -411,18 +389,6 @@ export async function expandConcept(
     }
   }
 
-  const EXPAND_PROMPT = `You are an AI assistant helping users expand concepts in visual diagrams.
-Given a concept, generate ${count} related sub-concepts or ideas that branch from it.
-
-Rules:
-- Each concept should be short (2-5 words)
-- Concepts should be directly related to the parent
-- Be specific and actionable
-- No numbering or bullets
-
-Respond with ONLY a JSON array of strings, nothing else.
-Example: ["Related Idea 1", "Related Idea 2", "Related Idea 3"]`
-
   try {
     const messages: AIMessage[] = [
       {
@@ -431,7 +397,7 @@ Example: ["Related Idea 1", "Related Idea 2", "Related Idea 3"]`
       },
     ]
 
-    const response = await aiService.sendMessage(messages, EXPAND_PROMPT)
+    const response = await aiService.sendMessage(messages, getExpandPrompt(count))
 
     // Parse the JSON array from response
     let concepts: string[]
@@ -474,27 +440,17 @@ Example: ["Related Idea 1", "Related Idea 2", "Related Idea 3"]`
       const shapeId = `expand_${Date.now()}_${index}`
       createdIds.push(shapeId)
 
-      // Add rectangle for the concept
+      // Add rectangle with text inside
       actions.push({
         type: 'add_rectangle',
         id: shapeId,
         position: adjustedPosition,
         size: { width: 140, height: 60 },
+        text: concept,
         style: {
           backgroundColor: '#e8f5e9',
           strokeColor: '#4caf50',
         },
-      })
-
-      // Add text inside the rectangle
-      actions.push({
-        type: 'add_text',
-        text: concept,
-        position: {
-          x: adjustedPosition.x + 10,
-          y: adjustedPosition.y + 20,
-        },
-        style: { fontSize: 14 },
       })
 
       // Add connection from parent to new concept
@@ -587,18 +543,6 @@ export async function suggestConnections(
       error: 'Not enough elements with text content',
     }
   }
-
-  const CONNECTIONS_PROMPT = `You are an AI assistant helping users connect related concepts in visual diagrams.
-Analyze the given elements and suggest logical connections between them.
-
-Rules:
-- Only suggest connections where there's a clear relationship
-- Each connection should have a brief reason
-- Don't suggest redundant connections
-- Consider cause-effect, hierarchy, and semantic relationships
-
-Respond with ONLY a JSON array of connection objects.
-Example: [{"from": "id1", "to": "id2", "reason": "causes"}, {"from": "id2", "to": "id3", "reason": "leads to"}]`
 
   try {
     const elementsDescription = elementData
@@ -718,15 +662,6 @@ export async function explainDiagram(
     }
   }
 
-  const EXPLAIN_PROMPT = `You are an AI assistant helping users understand visual diagrams.
-Analyze the given elements and provide a clear explanation of what the diagram represents.
-
-Rules:
-- Be concise but thorough
-- Identify relationships between elements
-- Explain the overall purpose or flow
-- Use simple language`
-
   try {
     const elementsDescription = elementData
       .map(e => `- ${e.type}: "${e.text}"`)
@@ -796,17 +731,6 @@ export async function summarizeDiagram(
       error: 'No elements with text to summarize',
     }
   }
-
-  const SUMMARIZE_PROMPT = `You are an AI assistant helping users summarize visual diagrams.
-Analyze the given elements and provide a concise summary with key points.
-
-Rules:
-- Create a brief 1-2 sentence summary
-- Extract 3-5 key points
-- Focus on the main ideas and relationships
-
-Respond with ONLY a JSON object in this format:
-{"summary": "Brief summary here", "keyPoints": ["Point 1", "Point 2", "Point 3"]}`
 
   try {
     const elementsDescription = elementData

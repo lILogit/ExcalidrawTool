@@ -35,6 +35,7 @@ export interface AddShapeAction extends BaseAction {
   position?: { x: number; y: number }
   size?: { width: number; height: number }
   style?: ElementStyle
+  text?: string // Optional text to display inside the shape (bound text)
   relativeTo?: string // Element ID to position relative to
   direction?: 'right' | 'below' | 'left' | 'above'
 }
@@ -190,7 +191,7 @@ export function executeAction(action: CanvasAction): ActionResult {
 
         let elementId: string
         if (action.type === 'add_rectangle') {
-          elementId = canvasManipulator.addRectangle(geometry, shapeAction.style)
+          elementId = canvasManipulator.addRectangle(geometry, shapeAction.style, { text: shapeAction.text })
         } else if (action.type === 'add_ellipse') {
           elementId = canvasManipulator.addEllipse(geometry, shapeAction.style)
         } else {
