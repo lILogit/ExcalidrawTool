@@ -150,8 +150,8 @@ export const useSelectionStore = create<SelectionStore>()(
     },
 
     getSelectionProperties: () => {
-      const elements = get().selectedElements
-      return elements.map(extractElementProperties)
+      const { selectedElements, allElements } = get()
+      return selectedElements.map((el) => extractElementProperties(el, allElements))
     },
 
     getRelationships: () => {

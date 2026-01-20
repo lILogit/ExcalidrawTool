@@ -80,6 +80,83 @@ export function getElementCategory(element: ExcalidrawElement): ElementCategory 
 }
 
 /**
+ * Tag extracted from element text
+ */
+export interface ElementTag {
+  tag: string // The tag without # prefix
+  elementId: string
+  elementType: string
+  context?: string // Surrounding text for context
+}
+
+/**
+ * Extract #tags from text content
+ * Supports: #tag, #multi-word-tag, #tag_with_underscore
+ */
+export function extractTagsFromText(text: string): string[] {
+  if (!text) return []
+  const tagMatches = text.match(/#[\w-]+/g)
+  return tagMatches ? tagMatches.map(t => t.substring(1)) : [] // Remove # prefix
+}
+
+/**
+ * Extract all tags from an element
+ */
+export function extractElementTags(
+  element: ExcalidrawElement,
+  allElements: readonly ExcalidrawElement[]
+): ElementTag[] {
+  const text = getElementText(element, allElements)
+  if (!text) return []
+
+  const tags = extractTagsFromText(text)
+  return tags.map(tag => ({
+    tag,
+    elementId: element.id,
+    elementType: element.type,
+    context: text.length > 100 ? text.substring(0, 100) + '...' : text,
+  }))
+}
+
+/**
+ * Extract all tags from multiple elements
+ */
+export function extractAllTags(
+  elements: readonly ExcalidrawElement[],
+  allElements: readonly ExcalidrawElement[]
+): ElementTag[] {
+  const allTags: ElementTag[] = []
+  for (const element of elements) {
+    allTags.push(...extractElementTags(element, allElements))
+  }
+  return allTags
+}
+
+/**
+ * Get unique tags from elements
+ */
+export function getUniqueTags(
+  elements: readonly ExcalidrawElement[],
+  allElements: readonly ExcalidrawElement[]
+): string[] {
+  const tags = extractAllTags(elements, allElements)
+  return [...new Set(tags.map(t => t.tag))]
+}
+
+/**
+ * Find elements by tag
+ */
+export function findElementsByTag(
+  tag: string,
+  allElements: readonly ExcalidrawElement[]
+): ExcalidrawElement[] {
+  return allElements.filter(element => {
+    const tags = extractElementTags(element, allElements)
+    return tags.some(t => t.tag.toLowerCase() === tag.toLowerCase())
+  })
+}
+
+/**
  * Extracted element properties for AI context
  */
 export interface ElementProperties {
@@ -89,6 +166,7 @@ export interface ElementProperties {
   position: { x: number; y: number }
   size: { width: number; height: number }
   text?: string
+  tags?: string[] // Extracted #tags
   style: {
     strokeColor: string
     backgroundColor: string
@@ -109,7 +187,10 @@ export interface ElementProperties {
 /**
  * Extract properties from an element for AI context
  */
-export function extractElementProperties(element: ExcalidrawElement): ElementProperties {
+export function extractElementProperties(
+  element: ExcalidrawElement,
+  allElements?: readonly ExcalidrawElement[]
+): ElementProperties {
   const base: ElementProperties = {
     id: element.id,
     type: element.type,
@@ -135,6 +216,25 @@ export function extractElementProperties(element: ExcalidrawElement): ElementPro
   if (element.type === 'text') {
     const textElement = element as ExcalidrawElement & { text?: string }
     base.text = textElement.text
+    // Extract tags from text
+    if (textElement.text) {
+      base.tags = extractTagsFromText(textElement.text)
+    }
+  }
+
+  // Extract text and tags from bound text elements
+  if (allElements && element.boundElements) {
+    const boundText = element.boundElements.find((b) => b.type === 'text')
+    if (boundText) {
+      const textElement = allElements.find((e) => e.id === boundText.id)
+      if (textElement?.type === 'text') {
+        const text = (textElement as ExcalidrawElement & { text?: string }).text
+        if (text) {
+          base.text = text
+          base.tags = extractTagsFromText(text)
+        }
+      }
+    }
   }
 
   // Extract connection info for arrows
@@ -331,6 +431,10 @@ export function serializeSelectionForAI(
   lines.push(`Selected ${elements.length} element(s):`)
   lines.push('')
 
+  // Collect all tags for context section
+  const allTags = extractAllTags(elements, allElements)
+  const uniqueTags = [...new Set(allTags.map(t => t.tag))]
+
   // Group by type
   const byType = new Map<string, ExcalidrawElement[]>()
   for (const element of elements) {
@@ -343,8 +447,27 @@ export function serializeSelectionForAI(
     lines.push(`## ${type.charAt(0).toUpperCase() + type.slice(1)}s (${typeElements.length}):`)
     for (const element of typeElements) {
       const text = getElementText(element, allElements)
+      const tags = text ? extractTagsFromText(text) : []
       const textDesc = text ? ` - "${text}"` : ''
-      lines.push(`- ${element.id.slice(0, 8)}...${textDesc}`)
+      const tagDesc = tags.length > 0 ? ` [${tags.map(t => '#' + t).join(', ')}]` : ''
+      lines.push(`- ${element.id.slice(0, 8)}...${textDesc}${tagDesc}`)
+    }
+    lines.push('')
+  }
+
+  // Tags summary section
+  if (uniqueTags.length > 0) {
+    lines.push('## Tags/Context:')
+    lines.push(`Found ${uniqueTags.length} tag(s): ${uniqueTags.map(t => '#' + t).join(', ')}`)
+    lines.push('')
+
+    // Group elements by tag for context
+    for (const tag of uniqueTags) {
+      const elementsWithTag = allTags.filter(t => t.tag === tag)
+      lines.push(`### #${tag}`)
+      for (const tagInfo of elementsWithTag) {
+        lines.push(`- Element ${tagInfo.elementId.slice(0, 8)} (${tagInfo.elementType}): "${tagInfo.context}"`)
+      }
     }
     lines.push('')
   }

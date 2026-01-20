@@ -9,6 +9,7 @@ export type {
   ElementCategory,
   ElementProperties,
   ElementRelationship,
+  ElementTag,
 } from '@/utils/elementUtils'
 
 // Re-export selection store types
@@ -35,10 +36,34 @@ export interface AIStreamChunk {
   content: string
 }
 
+export type AIProvider = 'anthropic' | 'ollama'
+
+export interface ModelParameters {
+  temperature?: number // 0.0-1.0, controls randomness
+  topP?: number // 0.0-1.0, nucleus sampling
+  topK?: number // Limits vocabulary for each step
+  repeatPenalty?: number // Penalizes repetition
+  seed?: number // For reproducible outputs
+}
+
 export interface AIServiceConfig {
-  apiKey: string
+  provider: AIProvider
+  apiKey?: string // Required for Anthropic, optional for Ollama
   model?: string
   maxTokens?: number
+  baseUrl?: string // For Ollama: default http://localhost:11434
+  parameters?: ModelParameters // Model generation parameters
+  debug?: boolean // Enable debug logging
+}
+
+export interface AIResponseStats {
+  provider: AIProvider
+  model: string
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  durationMs: number
+  timestamp: Date
 }
 
 export interface AIResponse {

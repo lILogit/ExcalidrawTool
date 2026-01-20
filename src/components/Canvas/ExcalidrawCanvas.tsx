@@ -3,6 +3,7 @@ import { Excalidraw } from '@excalidraw/excalidraw'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useCanvasStore } from '@/store/canvasStore'
 import { useContextMenuStore } from '@/store/contextMenuStore'
+import { loggingService } from '@/services/loggingService'
 import type { ExcalidrawElement, ExcalidrawImperativeAPI } from '@/types'
 import '@excalidraw/excalidraw/index.css'
 
@@ -66,6 +67,9 @@ export function ExcalidrawCanvas() {
       // Update all elements in store (needed for relationship detection)
       setAllElements(activeElements as ExcalidrawElement[])
 
+      // Log canvas updates for cognitive process learning
+      loggingService.logCanvasUpdate(activeElements as ExcalidrawElement[])
+
       // Debounced save to localStorage
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
@@ -88,6 +92,18 @@ export function ExcalidrawCanvas() {
 
         // Get the actual selected elements
         const selectedElements = activeElements.filter((el) => selectedIds.includes(el.id))
+
+        // Log selection change
+        if (selectedIds.length > 0) {
+          loggingService.addEntry({
+            type: 'selection_changed',
+            data: {
+              count: selectedIds.length,
+              elementIds: selectedIds,
+              elementTypes: selectedElements.map(e => e.type),
+            },
+          })
+        }
 
         // Update selection store
         setSelection(selectedIds, selectedElements as ExcalidrawElement[])

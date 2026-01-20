@@ -13,14 +13,28 @@ function App() {
   const selection = useSelection()
   const [isProcessing, setIsProcessing] = useState(false)
 
-  // Initialize AI service with API key from environment
+  // Initialize AI service with provider from environment
   useEffect(() => {
+    const provider = (import.meta.env.VITE_AI_PROVIDER || 'anthropic') as 'anthropic' | 'ollama'
     const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
-    if (apiKey) {
-      aiService.initialize({ apiKey })
-      console.log('AI Service initialized')
+    const ollamaBaseUrl = import.meta.env.VITE_OLLAMA_BASE_URL
+    const ollamaModel = import.meta.env.VITE_OLLAMA_MODEL
+
+    if (provider === 'ollama') {
+      aiService.initialize({
+        provider: 'ollama',
+        baseUrl: ollamaBaseUrl,
+        model: ollamaModel,
+      })
+      console.log('AI Service initialized with Ollama')
+    } else if (apiKey) {
+      aiService.initialize({
+        provider: 'anthropic',
+        apiKey,
+      })
+      console.log('AI Service initialized with Anthropic')
     } else {
-      console.warn('VITE_ANTHROPIC_API_KEY not set - AI features will be disabled')
+      console.warn('AI provider not configured - set VITE_AI_PROVIDER=ollama or VITE_ANTHROPIC_API_KEY')
     }
   }, [])
 
