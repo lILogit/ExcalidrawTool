@@ -18,6 +18,17 @@ export type {
   SelectionListener,
 } from '@/store/selectionStore'
 
+// Re-export canvas context types
+export type {
+  CanvasDomain,
+  CanvasContext,
+  TerminologyEntry,
+  ColorMeaning,
+  CanvasStyleGuide,
+  ResponseStyle,
+} from '@/types/canvasContext'
+export { DEFAULT_CANVAS_CONTEXT, getDomainDisplayName, getDomainOptions } from '@/types/canvasContext'
+
 // Canvas/App state
 export interface CanvasState {
   isLoading: boolean

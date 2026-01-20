@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useChatStore, type ChatMessage } from '@/store/chatStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useCanvasStore } from '@/store/canvasStore'
 import { aiService } from '@/services/aiService'
-import { serializeSelectionForAI } from '@/utils/elementUtils'
+import { serializeContextForAI } from '@/utils/elementUtils'
 import { executeActions, parseAIResponse } from '@/services/actionParser'
-import { CHAT_SYSTEM_PROMPT } from '@/config/prompts'
+import { CHAT_SYSTEM_PROMPT, buildSystemPrompt } from '@/config/prompts'
 import type { AIMessage } from '@/types'
 import styles from './ChatPanel.module.css'
 
@@ -12,6 +13,7 @@ export function ChatPanel() {
   const { isOpen, messages, isLoading, addMessage, setLoading, setError } = useChatStore()
   const selectedElements = useSelectionStore((state) => state.selectedElements)
   const allElements = useSelectionStore((state) => state.allElements)
+  const canvasContext = useCanvasStore((state) => state.canvasContext)
 
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -53,8 +55,11 @@ export function ChatPanel() {
     setError(null)
 
     try {
-      // Build context string
-      const contextStr = serializeSelectionForAI(selectedElements, allElements)
+      // Build context string with canvas context
+      const contextStr = serializeContextForAI(canvasContext, selectedElements, allElements)
+
+      // Build enhanced system prompt with canvas context
+      const enhancedSystemPrompt = buildSystemPrompt(CHAT_SYSTEM_PROMPT, canvasContext)
 
       // Build message history for AI
       const aiMessages: AIMessage[] = messages.slice(-10).map((m) => ({
@@ -68,8 +73,8 @@ export function ChatPanel() {
         content: `${trimmedInput}\n\nCurrent canvas context:\n${contextStr || 'Empty canvas'}`,
       })
 
-      // Call AI
-      const response = await aiService.sendMessage(aiMessages, CHAT_SYSTEM_PROMPT)
+      // Call AI with enhanced system prompt
+      const response = await aiService.sendMessage(aiMessages, enhancedSystemPrompt)
 
       // Parse response for actions
       const parsed = parseAIResponse(response.content)
@@ -101,7 +106,7 @@ export function ChatPanel() {
     } finally {
       setLoading(false)
     }
-  }, [input, isLoading, messages, selectedElements, allElements, addMessage, setLoading, setError])
+  }, [input, isLoading, messages, selectedElements, allElements, canvasContext, addMessage, setLoading, setError])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

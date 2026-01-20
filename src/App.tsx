@@ -2,16 +2,20 @@ import { useEffect, useCallback, useState } from 'react'
 import { ExcalidrawCanvas } from '@/components/Canvas/ExcalidrawCanvas'
 import { ContextMenu } from '@/components/UI/ContextMenu'
 import { ChatPanel } from '@/components/UI/ChatPanel'
+import { CanvasContextModal } from '@/components/UI/CanvasContextModal'
 import { aiService } from '@/services/aiService'
 import { updateWording, makeConcise, improveClarity, expandConcept, suggestConnections, explainDiagram, summarizeDiagram } from '@/services/aiActions'
 import { useSelection } from '@/hooks/useSelection'
 import { useChatStore } from '@/store/chatStore'
+import { useCanvasStore } from '@/store/canvasStore'
 import { showAIChangeFeedback, showAIActionToast } from '@/utils/visualFeedback'
 import type { ExcalidrawElement } from '@/types'
 
 function App() {
   const selection = useSelection()
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isContextModalOpen, setIsContextModalOpen] = useState(false)
+  const canvasContext = useCanvasStore((state) => state.canvasContext)
 
   // Initialize AI service with provider from environment
   useEffect(() => {
@@ -260,6 +264,40 @@ function App() {
       <ExcalidrawCanvas />
       <ContextMenu onAction={handleContextMenuAction} />
       <ChatPanel />
+      <CanvasContextModal
+        isOpen={isContextModalOpen}
+        onClose={() => setIsContextModalOpen(false)}
+      />
+
+      {/* Canvas Context Button */}
+      <button
+        className="context-settings-button"
+        onClick={() => setIsContextModalOpen(true)}
+        title="Canvas Context Settings"
+        style={{
+          position: 'fixed',
+          bottom: '80px',
+          right: isChatOpen ? '400px' : '20px',
+          width: '50px',
+          height: '50px',
+          borderRadius: '50%',
+          background: canvasContext ? '#28a745' : '#6c757d',
+          color: 'white',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '20px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 999,
+          transition: 'right 0.3s ease, transform 0.2s ease, background 0.2s ease',
+        }}
+        onMouseOver={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
+        onMouseOut={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+      >
+        {canvasContext ? '⚙' : '⚙'}
+      </button>
 
       {/* AI Chat Toggle Button */}
       <button

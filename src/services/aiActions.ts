@@ -12,9 +12,25 @@ import {
   EXPLAIN_PROMPT,
   SUMMARIZE_PROMPT,
   getExpandPrompt,
+  buildSystemPrompt,
 } from '@/config/prompts'
-import type { ExcalidrawElement } from '@/types'
+import type { ExcalidrawElement, CanvasContext } from '@/types'
 import type { AIMessage } from '@/types'
+
+/**
+ * Helper to get current canvas context from store
+ */
+function getCanvasContext(): CanvasContext | null {
+  return useCanvasStore.getState().canvasContext
+}
+
+/**
+ * Helper to get enhanced prompt with canvas context
+ */
+function getContextEnhancedPrompt(basePrompt: string): string {
+  const context = getCanvasContext()
+  return buildSystemPrompt(basePrompt, context)
+}
 
 /**
  * Result of an AI action
@@ -194,7 +210,8 @@ export async function updateWording(
 
       console.log('[updateWording] Calling AI service...')
       // Use retry mechanism to handle empty responses
-      const response = await aiService.sendMessageWithRetry(messages, TEXT_IMPROVEMENT_PROMPT, {
+      const enhancedPrompt = getContextEnhancedPrompt(TEXT_IMPROVEMENT_PROMPT)
+      const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
         validator: ResponseValidators.notEmpty,
         onRetry: (attempt, error) => {
           console.log(`[updateWording] Retry ${attempt}: ${error}`)
@@ -307,7 +324,8 @@ export async function makeConcise(
       ]
 
       // Use retry mechanism to handle empty responses
-      const response = await aiService.sendMessageWithRetry(messages, CONCISE_PROMPT, {
+      const enhancedPrompt = getContextEnhancedPrompt(CONCISE_PROMPT)
+      const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
         validator: ResponseValidators.notEmpty,
         onRetry: (attempt, error) => {
           console.log(`[makeConcise] Retry ${attempt}: ${error}`)
@@ -399,7 +417,8 @@ export async function improveClarity(
       ]
 
       // Use retry mechanism to handle empty responses
-      const response = await aiService.sendMessageWithRetry(messages, CLARITY_PROMPT, {
+      const enhancedPrompt = getContextEnhancedPrompt(CLARITY_PROMPT)
+      const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
         validator: ResponseValidators.notEmpty,
         onRetry: (attempt, error) => {
           console.log(`[improveClarity] Retry ${attempt}: ${error}`)
@@ -505,7 +524,8 @@ export async function expandConcept(
     ]
 
     // Use retry mechanism with JSON array validation
-    const response = await aiService.sendMessageWithRetry(messages, getExpandPrompt(count), {
+    const enhancedPrompt = getContextEnhancedPrompt(getExpandPrompt(count))
+    const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
       validator: ResponseValidators.containsJSONArray,
       onRetry: (attempt, error) => {
         console.log(`[expandConcept] Retry ${attempt}: ${error}`)
@@ -754,7 +774,8 @@ export async function suggestConnections(
     ]
 
     // Use retry mechanism with JSON array validation
-    const response = await aiService.sendMessageWithRetry(messages, CONNECTIONS_PROMPT, {
+    const enhancedPrompt = getContextEnhancedPrompt(CONNECTIONS_PROMPT)
+    const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
       validator: ResponseValidators.containsJSONArray,
       onRetry: (attempt, error) => {
         console.log(`[suggestConnections] Retry ${attempt}: ${error}`)
@@ -974,7 +995,8 @@ export async function explainDiagram(
     ]
 
     // Use retry mechanism to handle empty responses
-    const response = await aiService.sendMessageWithRetry(messages, EXPLAIN_PROMPT, {
+    const enhancedPrompt = getContextEnhancedPrompt(EXPLAIN_PROMPT)
+    const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
       validator: ResponseValidators.notEmpty,
       onRetry: (attempt, error) => {
         console.log(`[explainDiagram] Retry ${attempt}: ${error}`)
@@ -1065,7 +1087,8 @@ export async function summarizeDiagram(
     ]
 
     // Use retry mechanism with JSON validation (expects object with summary and keyPoints)
-    const response = await aiService.sendMessageWithRetry(messages, SUMMARIZE_PROMPT, {
+    const enhancedPrompt = getContextEnhancedPrompt(SUMMARIZE_PROMPT)
+    const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
       validator: ResponseValidators.hasKeys('summary', 'keyPoints'),
       onRetry: (attempt, error) => {
         console.log(`[summarizeDiagram] Retry ${attempt}: ${error}`)

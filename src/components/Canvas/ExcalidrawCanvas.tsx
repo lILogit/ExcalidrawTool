@@ -4,22 +4,31 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { useCanvasStore } from '@/store/canvasStore'
 import { useContextMenuStore } from '@/store/contextMenuStore'
 import { loggingService } from '@/services/loggingService'
-import type { ExcalidrawElement, ExcalidrawImperativeAPI } from '@/types'
+import type { ExcalidrawElement, ExcalidrawImperativeAPI, CanvasContext } from '@/types'
 import '@excalidraw/excalidraw/index.css'
 
 const STORAGE_KEY = 'excalidraw-ai-canvas'
 const SAVE_DELAY = 300 // Debounce save to avoid excessive writes
 
+interface StorageData {
+  elements: ExcalidrawElement[]
+  canvasContext?: CanvasContext | null
+  timestamp: number
+}
+
 /**
  * Load saved canvas data from localStorage
  */
-function loadFromStorage(): { elements: ExcalidrawElement[] } | null {
+function loadFromStorage(): { elements: ExcalidrawElement[]; canvasContext?: CanvasContext | null } | null {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
-      const data = JSON.parse(saved)
+      const data: StorageData = JSON.parse(saved)
       if (data.elements && Array.isArray(data.elements)) {
-        return { elements: data.elements }
+        return {
+          elements: data.elements,
+          canvasContext: data.canvasContext || null,
+        }
       }
     }
   } catch (error) {
@@ -31,10 +40,11 @@ function loadFromStorage(): { elements: ExcalidrawElement[] } | null {
 /**
  * Save canvas data to localStorage
  */
-function saveToStorage(elements: readonly ExcalidrawElement[]): void {
+function saveToStorage(elements: readonly ExcalidrawElement[], canvasContext: CanvasContext | null): void {
   try {
-    const data = {
-      elements: elements.filter((el) => !el.isDeleted),
+    const data: StorageData = {
+      elements: elements.filter((el) => !el.isDeleted) as ExcalidrawElement[],
+      canvasContext,
       timestamp: Date.now(),
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -47,6 +57,8 @@ export function ExcalidrawCanvas() {
   const setSelection = useSelectionStore((state) => state.setSelection)
   const setAllElements = useSelectionStore((state) => state.setAllElements)
   const setExcalidrawAPI = useCanvasStore((state) => state.setExcalidrawAPI)
+  const canvasContext = useCanvasStore((state) => state.canvasContext)
+  const setCanvasContext = useCanvasStore((state) => state.setCanvasContext)
   const openContextMenu = useContextMenuStore((state) => state.open)
   const closeContextMenu = useContextMenuStore((state) => state.close)
 
@@ -55,9 +67,36 @@ export function ExcalidrawCanvas() {
   const prevSelectionRef = useRef<string>('')
   // Debounce timer for saving
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  // Track if context has been initialized from storage
+  const contextInitializedRef = useRef(false)
 
   // Load initial data from localStorage
-  const [initialData] = useState(() => loadFromStorage())
+  const [initialData] = useState(() => {
+    const data = loadFromStorage()
+    // Store the loaded context to be applied after mount
+    if (data?.canvasContext && !contextInitializedRef.current) {
+      // We'll set this in useEffect since we can't call hooks in useState
+      return data
+    }
+    return data
+  })
+
+  // Initialize canvas context from storage on mount
+  useEffect(() => {
+    if (!contextInitializedRef.current && initialData?.canvasContext) {
+      setCanvasContext(initialData.canvasContext)
+      contextInitializedRef.current = true
+    }
+  }, [initialData, setCanvasContext])
+
+  // Save canvas context when it changes
+  useEffect(() => {
+    if (contextInitializedRef.current && canvasContext) {
+      // Get current elements from the store
+      const allElements = useSelectionStore.getState().allElements
+      saveToStorage(allElements, canvasContext)
+    }
+  }, [canvasContext])
 
   const handleChange = useCallback(
     (elements: readonly ExcalidrawElement[], appState: { selectedElementIds: Record<string, boolean> }) => {
@@ -70,12 +109,14 @@ export function ExcalidrawCanvas() {
       // Log canvas updates for cognitive process learning
       loggingService.logCanvasUpdate(activeElements as ExcalidrawElement[])
 
-      // Debounced save to localStorage
+      // Debounced save to localStorage (including canvas context)
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
       }
       saveTimerRef.current = setTimeout(() => {
-        saveToStorage(elements)
+        // Get latest canvas context from store
+        const currentContext = useCanvasStore.getState().canvasContext
+        saveToStorage(elements, currentContext)
       }, SAVE_DELAY)
 
       // Extract selected element IDs

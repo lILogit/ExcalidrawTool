@@ -1,4 +1,5 @@
-import type { ExcalidrawElement } from '@/types'
+import type { ExcalidrawElement, CanvasContext } from '@/types'
+import { getDomainDisplayName } from '@/types/canvasContext'
 
 /**
  * Element type categories for easier classification
@@ -495,4 +496,111 @@ export function serializeSelectionForAI(
   }
 
   return lines.join('\n')
+}
+
+/**
+ * Serialize canvas context for AI prompt enrichment
+ */
+export function serializeCanvasContext(context: CanvasContext | null): string {
+  if (!context) {
+    return ''
+  }
+
+  const lines: string[] = []
+  lines.push('## Canvas Context')
+  lines.push('')
+
+  // Domain and basic info
+  const domainDisplay =
+    context.domain === 'custom'
+      ? context.customDomain || 'Custom'
+      : getDomainDisplayName(context.domain)
+  lines.push(`**Type:** ${domainDisplay}`)
+
+  if (context.title) {
+    lines.push(`**Title:** ${context.title}`)
+  }
+
+  if (context.description) {
+    lines.push(`**Description:** ${context.description}`)
+  }
+
+  lines.push('')
+
+  // Conventions
+  if (context.conventions && context.conventions.length > 0) {
+    lines.push('**Conventions:**')
+    for (const convention of context.conventions) {
+      lines.push(`- ${convention}`)
+    }
+    lines.push('')
+  }
+
+  // Terminology
+  if (context.terminology && context.terminology.length > 0) {
+    lines.push('**Terminology:**')
+    for (const term of context.terminology) {
+      lines.push(`- **${term.term}**: ${term.definition}`)
+    }
+    lines.push('')
+  }
+
+  // Style guide
+  if (context.styleGuide) {
+    const { nodeNamingConvention, connectionLabeling, colorMeanings } = context.styleGuide
+
+    if (nodeNamingConvention || connectionLabeling || (colorMeanings && colorMeanings.length > 0)) {
+      lines.push('**Style Guide:**')
+
+      if (nodeNamingConvention) {
+        lines.push(`- Node naming: ${nodeNamingConvention}`)
+      }
+
+      if (connectionLabeling) {
+        lines.push(`- Connection labels: ${connectionLabeling}`)
+      }
+
+      if (colorMeanings && colorMeanings.length > 0) {
+        lines.push('- Color meanings:')
+        for (const cm of colorMeanings) {
+          lines.push(`  - ${cm.color}: ${cm.meaning}`)
+        }
+      }
+
+      lines.push('')
+    }
+  }
+
+  // AI-specific instructions
+  if (context.aiInstructions) {
+    lines.push('**Special Instructions:** ' + context.aiInstructions)
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+/**
+ * Serialize both canvas context and selection for AI
+ * Combines context information with element selection
+ */
+export function serializeContextForAI(
+  canvasContext: CanvasContext | null,
+  selectedElements: readonly ExcalidrawElement[],
+  allElements: readonly ExcalidrawElement[]
+): string {
+  const parts: string[] = []
+
+  // Add canvas context if available
+  const contextStr = serializeCanvasContext(canvasContext)
+  if (contextStr) {
+    parts.push(contextStr)
+    parts.push('---')
+    parts.push('')
+  }
+
+  // Add element selection
+  parts.push(serializeSelectionForAI(selectedElements, allElements))
+
+  return parts.join('\n')
 }

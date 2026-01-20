@@ -5,6 +5,9 @@
  * Each prompt defines the AI's behavior for a specific action.
  */
 
+import type { CanvasContext } from '@/types'
+import { getDomainDisplayName } from '@/types/canvasContext'
+
 /**
  * Chat panel system prompt - used for conversational AI interactions
  */
@@ -141,3 +144,158 @@ Rules:
 
 Respond with ONLY a JSON object in this format:
 {"summary": "Brief summary here", "keyPoints": ["Point 1", "Point 2", "Point 3"]}`
+
+/**
+ * Build an enhanced system prompt that incorporates canvas context
+ * This function injects domain knowledge, response style, and custom instructions
+ * into the base prompt
+ */
+export function buildSystemPrompt(
+  basePrompt: string,
+  canvasContext: CanvasContext | null
+): string {
+  if (!canvasContext) {
+    return basePrompt
+  }
+
+  const parts: string[] = [basePrompt]
+
+  // Add domain context
+  const domainDisplay =
+    canvasContext.domain === 'custom'
+      ? canvasContext.customDomain || 'Custom'
+      : getDomainDisplayName(canvasContext.domain)
+
+  if (canvasContext.domain !== 'general') {
+    parts.push('')
+    parts.push(`## Domain Context`)
+    parts.push(`This diagram is a ${domainDisplay} diagram.`)
+
+    if (canvasContext.description) {
+      parts.push(`Purpose: ${canvasContext.description}`)
+    }
+  }
+
+  // Add response style guidance
+  if (canvasContext.responseStyle) {
+    parts.push('')
+    parts.push('## Response Style')
+    switch (canvasContext.responseStyle) {
+      case 'concise':
+        parts.push('Keep responses brief and to the point. Use bullet points where appropriate.')
+        break
+      case 'detailed':
+        parts.push('Provide thorough explanations with context and examples where helpful.')
+        break
+      case 'technical':
+        parts.push(
+          'Use technical terminology appropriate for the domain. Assume familiarity with the subject matter.'
+        )
+        break
+      case 'beginner-friendly':
+        parts.push(
+          'Explain concepts in simple terms. Avoid jargon and define technical terms when used.'
+        )
+        break
+    }
+  }
+
+  // Add domain terminology
+  if (canvasContext.terminology && canvasContext.terminology.length > 0) {
+    parts.push('')
+    parts.push('## Domain Terminology')
+    parts.push('When discussing this diagram, use these domain-specific terms:')
+    for (const term of canvasContext.terminology) {
+      parts.push(`- **${term.term}**: ${term.definition}`)
+    }
+  }
+
+  // Add conventions
+  if (canvasContext.conventions && canvasContext.conventions.length > 0) {
+    parts.push('')
+    parts.push('## Diagram Conventions')
+    parts.push('This diagram follows these conventions:')
+    for (const convention of canvasContext.conventions) {
+      parts.push(`- ${convention}`)
+    }
+  }
+
+  // Add style guide context
+  if (canvasContext.styleGuide) {
+    const { nodeNamingConvention, connectionLabeling, colorMeanings } = canvasContext.styleGuide
+    const hasStyleInfo =
+      nodeNamingConvention || connectionLabeling || (colorMeanings && colorMeanings.length > 0)
+
+    if (hasStyleInfo) {
+      parts.push('')
+      parts.push('## Style Conventions')
+
+      if (nodeNamingConvention) {
+        parts.push(`- Node labels use ${nodeNamingConvention} naming`)
+      }
+
+      if (connectionLabeling) {
+        parts.push(`- Connections are labeled with ${connectionLabeling}`)
+      }
+
+      if (colorMeanings && colorMeanings.length > 0) {
+        parts.push('- Color meanings in this diagram:')
+        for (const cm of colorMeanings) {
+          parts.push(`  - ${cm.color}: ${cm.meaning}`)
+        }
+      }
+    }
+  }
+
+  // Add custom AI instructions (highest priority)
+  if (canvasContext.aiInstructions) {
+    parts.push('')
+    parts.push('## Special Instructions')
+    parts.push(canvasContext.aiInstructions)
+  }
+
+  return parts.join('\n')
+}
+
+/**
+ * Get enhanced prompt by combining base prompt with canvas context
+ * Convenience wrapper for common use case
+ */
+export function getEnhancedPrompt(
+  promptKey: 'chat' | 'text_improvement' | 'concise' | 'clarity' | 'expand' | 'connections' | 'explain' | 'summarize',
+  canvasContext: CanvasContext | null,
+  options?: { expandCount?: number }
+): string {
+  let basePrompt: string
+
+  switch (promptKey) {
+    case 'chat':
+      basePrompt = CHAT_SYSTEM_PROMPT
+      break
+    case 'text_improvement':
+      basePrompt = TEXT_IMPROVEMENT_PROMPT
+      break
+    case 'concise':
+      basePrompt = CONCISE_PROMPT
+      break
+    case 'clarity':
+      basePrompt = CLARITY_PROMPT
+      break
+    case 'expand':
+      basePrompt = getExpandPrompt(options?.expandCount ?? 3)
+      break
+    case 'connections':
+      basePrompt = CONNECTIONS_PROMPT
+      break
+    case 'explain':
+      basePrompt = EXPLAIN_PROMPT
+      break
+    case 'summarize':
+      basePrompt = SUMMARIZE_PROMPT
+      break
+    default:
+      basePrompt = ''
+  }
+
+  return buildSystemPrompt(basePrompt, canvasContext)
+}
