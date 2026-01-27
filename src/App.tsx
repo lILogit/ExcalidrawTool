@@ -4,6 +4,8 @@ import { ContextMenu } from '@/components/UI/ContextMenu'
 import { ChatPanel } from '@/components/UI/ChatPanel'
 import { CanvasContextModal } from '@/components/UI/CanvasContextModal'
 import { aiService } from '@/services/aiService'
+import { n8nService } from '@/services/n8nService'
+import { n8nListenerService } from '@/services/n8nListenerService'
 import { updateWording, makeConcise, improveClarity, expandConcept, suggestConnections, explainDiagram, summarizeDiagram } from '@/services/aiActions'
 import { useSelection } from '@/hooks/useSelection'
 import { useChatStore } from '@/store/chatStore'
@@ -16,6 +18,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isContextModalOpen, setIsContextModalOpen] = useState(false)
   const canvasContext = useCanvasStore((state) => state.canvasContext)
+  const excalidrawAPI = useCanvasStore((state) => state.excalidrawAPI)
 
   // Initialize AI service with provider from environment
   useEffect(() => {
@@ -41,6 +44,97 @@ function App() {
       console.warn('AI provider not configured - set VITE_AI_PROVIDER=ollama or VITE_ANTHROPIC_API_KEY')
     }
   }, [])
+
+  // Start N8N listener to receive canvas updates from N8N
+  useEffect(() => {
+    n8nListenerService.start()
+
+    const callbackUrl = n8nListenerService.getCallbackUrl()
+    console.log('[N8N] Callback URL:', callbackUrl)
+    console.log('[N8N] Use this URL in your N8N HTTP Request node')
+
+    // Subscribe to updates from N8N
+    const unsubscribe = n8nListenerService.onUpdate(async (update) => {
+      console.log('[N8N] Received update:', update)
+
+      const { elements, elementsToDelete, message } = update.data
+
+      // Show notification
+      if (message) {
+        showAIActionToast(`N8N: ${message}`, 'info')
+      }
+
+      // Apply updates to canvas if API is available
+      if (excalidrawAPI) {
+        // Get current scene elements
+        const sceneElements = excalidrawAPI.getSceneElements() as ExcalidrawElement[]
+
+        // Create a map of existing elements for quick lookup
+        const existingElementsMap = new Map<string, ExcalidrawElement>()
+        for (const el of sceneElements) {
+          existingElementsMap.set(el.id, el)
+        }
+
+        // Track updated and new element IDs
+        const updatedIds: string[] = []
+        const newIds: string[] = []
+
+        // Merge N8N elements with existing elements
+        const mergedElements: ExcalidrawElement[] = [...sceneElements]
+
+        if (elements && elements.length > 0) {
+          for (const newElement of elements) {
+            const existingIndex = mergedElements.findIndex(el => el.id === newElement.id)
+
+            if (existingIndex >= 0) {
+              // Update existing element
+              mergedElements[existingIndex] = newElement
+              updatedIds.push(newElement.id)
+            } else {
+              // Add new element
+              mergedElements.push(newElement)
+              newIds.push(newElement.id)
+            }
+          }
+        }
+
+        // Remove elements marked for deletion
+        if (elementsToDelete && elementsToDelete.length > 0) {
+          const deletedCount = mergedElements.length
+          const finalElements = mergedElements.filter(el => !elementsToDelete.includes(el.id))
+          const actuallyDeleted = deletedCount - finalElements.length
+
+          // Update the entire scene with merged elements
+          excalidrawAPI.updateScene({
+            elements: finalElements,
+          })
+
+          if (actuallyDeleted > 0) {
+            showAIActionToast(`Deleted ${actuallyDeleted} element(s) from N8N`, 'info')
+          }
+        } else if (elements && elements.length > 0) {
+          // Update the entire scene with merged elements
+          excalidrawAPI.updateScene({
+            elements: mergedElements,
+          })
+        }
+
+        // Show feedback for updated/new elements
+        if (updatedIds.length > 0 || newIds.length > 0) {
+          const allChangedIds = [...updatedIds, ...newIds]
+          const message = `Updated ${updatedIds.length} and added ${newIds.length} element(s) from N8N`
+          showAIChangeFeedback(allChangedIds, message)
+        }
+      } else {
+        console.warn('[N8N] Excalidraw API not available, cannot apply updates')
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      n8nListenerService.stop()
+    }
+  }, [excalidrawAPI])
 
   // Handle context menu actions
   const handleContextMenuAction = useCallback(
@@ -240,6 +334,142 @@ function App() {
         case 'ask-ai':
           // Open chat panel for AI conversation
           useChatStore.getState().openChat()
+          break
+
+        case 'n8n-webhook':
+          // Send selected elements to N8N webhook
+          if (selectedElements.length > 0) {
+            setIsProcessing(true)
+            console.log('Sending to N8N webhook...')
+            try {
+              const response = await n8nService.sendToWebhook(
+                selectedElements,
+                allElements.length,
+                'process'
+              )
+
+              if (response.success) {
+                console.log('N8N webhook response:', response)
+
+                // Apply response to canvas if there are elements to update
+                const api = useCanvasStore.getState().excalidrawAPI
+                if (api && (response.elements || response.elementsToDelete)) {
+                  const result = await n8nService.applyResponse(response, {
+                    updateElements: (elements) => {
+                      api.updateScene({
+                        elements,
+                      })
+                    },
+                  })
+
+                  // Show feedback
+                  const messages: string[] = []
+                  if (result.created.length > 0) messages.push(`created ${result.created.length}`)
+                  if (result.updated.length > 0) messages.push(`updated ${result.updated.length}`)
+                  if (result.deleted.length > 0) messages.push(`deleted ${result.deleted.length}`)
+
+                  if (messages.length > 0) {
+                    showAIActionToast(`N8N: ${messages.join(', ')}`, 'success')
+                  }
+
+                  // Highlight affected elements
+                  const affectedIds = [...result.created, ...result.updated]
+                  if (affectedIds.length > 0) {
+                    showAIChangeFeedback(affectedIds, response.message || 'Canvas updated by N8N')
+                  }
+                } else if (response.message) {
+                  showAIActionToast(response.message, 'success')
+                }
+              } else {
+                showAIActionToast(response.error || 'N8N webhook request failed', 'error')
+              }
+            } catch (error) {
+              console.error('N8N webhook error:', error)
+              showAIActionToast(error instanceof Error ? error.message : 'Failed to send to N8N', 'error')
+            } finally {
+              setIsProcessing(false)
+            }
+          } else {
+            showAIActionToast('Select at least 1 element', 'info')
+          }
+          break
+
+        case 'n8n-analyze':
+          // Send selected elements to N8N for analysis
+          if (selectedElements.length > 0) {
+            setIsProcessing(true)
+            console.log('Analyzing with N8N...')
+            try {
+              const response = await n8nService.sendToWebhook(
+                selectedElements,
+                allElements.length,
+                'analyze'
+              )
+
+              if (response.success) {
+                console.log('N8N analysis response:', response)
+
+                // Show results in chat panel
+                useChatStore.getState().openChat()
+                useChatStore.getState().addMessage({
+                  role: 'assistant',
+                  content: response.message || 'Analysis completed successfully',
+                })
+
+                // Apply any canvas updates from the analysis
+                const api = useCanvasStore.getState().excalidrawAPI
+                if (api && response.elements) {
+                  await n8nService.applyResponse(response, {
+                    updateElements: (elements) => {
+                      api.updateScene({
+                        elements,
+                      })
+                    },
+                  })
+                }
+              } else {
+                showAIActionToast(response.error || 'N8N analysis failed', 'error')
+              }
+            } catch (error) {
+              console.error('N8N analysis error:', error)
+              showAIActionToast(error instanceof Error ? error.message : 'Failed to analyze with N8N', 'error')
+            } finally {
+              setIsProcessing(false)
+            }
+          } else {
+            showAIActionToast('Select at least 1 element', 'info')
+          }
+          break
+
+        case 'n8n-test':
+          // Test N8N webhook connection
+          setIsProcessing(true)
+          console.log('Testing N8N connection...')
+          try {
+            const result = await n8nService.testConnection()
+
+            // Show results in chat panel for better readability
+            useChatStore.getState().openChat()
+            useChatStore.getState().addMessage({
+              role: 'assistant',
+              content: `**N8N Connection Test**\n\n` +
+                `Status: ${result.success ? '✅ Success' : '❌ Failed'}\n` +
+                `${result.statusCode ? `HTTP Status: ${result.statusCode}\n` : ''}` +
+                `Webhook URL: ${n8nService.getWebhookUrl() || 'Not configured'}\n\n` +
+                `**Details:**\n${result.message}`,
+            })
+
+            if (result.success) {
+              showAIActionToast('N8N connection test successful!', 'success')
+            } else {
+              showAIActionToast('N8N connection test failed', 'error')
+            }
+          } catch (error) {
+            console.error('N8N test error:', error)
+            showAIActionToast(error instanceof Error ? error.message : 'Test connection failed', 'error')
+          } finally {
+            setIsProcessing(false)
+          }
           break
 
         default:

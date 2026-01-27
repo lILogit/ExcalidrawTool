@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react'
 import { useContextMenuStore } from '@/store/contextMenuStore'
+import { n8nService } from '@/services/n8nService'
 import { isShape, isText, isConnector } from '@/utils/elementUtils'
 import styles from './ContextMenu.module.css'
 
@@ -104,7 +105,7 @@ export function ContextMenu({ onAction }: ContextMenuProps) {
     if (!selection.hasSelection) {
       items.push({
         id: 'no-selection',
-        label: 'Select elements to see AI actions',
+        label: 'Select elements to see actions',
         disabled: true,
       })
       return items
@@ -118,100 +119,52 @@ export function ContextMenu({ onAction }: ContextMenuProps) {
       divider: true,
     })
 
-    // Text-related actions (if selection has text or shapes with text)
+    // Update wording - for text or shapes
     if (selection.categories.includes('text') || selection.categories.includes('shape')) {
       items.push({
         id: 'update-wording',
         label: 'Update wording',
         icon: '✏️',
-        shortcut: '⌘U',
-      })
-
-      items.push({
-        id: 'improve-clarity',
-        label: 'Improve clarity',
-        icon: '💡',
-      })
-
-      items.push({
-        id: 'make-concise',
-        label: 'Make concise',
-        icon: '📝',
       })
     }
 
-    // Shape-related actions
-    if (selection.categories.includes('shape')) {
-      items.push({
-        id: 'divider-1',
-        label: '',
-        divider: true,
-        disabled: true,
-      })
-
+    // Suggest connections - for shapes
+    if (selection.categories.includes('shape') && selection.isMulti) {
       items.push({
         id: 'suggest-connections',
         label: 'Suggest connections',
         icon: '🔗',
       })
-
-      items.push({
-        id: 'expand-concept',
-        label: 'Expand concept',
-        icon: '🌱',
-      })
     }
 
-    // Connector-related actions
-    if (selection.categories.includes('connector')) {
+    // N8N Webhook section
+    if (n8nService.isConfigured()) {
       items.push({
-        id: 'label-arrow',
-        label: 'Add/update label',
-        icon: '🏷️',
-      })
-    }
-
-    // Multi-selection actions
-    if (selection.isMulti) {
-      items.push({
-        id: 'divider-2',
+        id: 'divider-n8n',
         label: '',
         divider: true,
         disabled: true,
       })
 
       items.push({
-        id: 'summarize',
-        label: 'Summarize selection',
-        icon: '📋',
+        id: 'n8n-header',
+        label: 'N8N Integration',
+        disabled: true,
+        divider: true,
       })
 
       items.push({
-        id: 'find-relationships',
-        label: 'Find relationships',
-        icon: '🔍',
+        id: 'n8n-webhook',
+        label: 'Send to N8N webhook',
+        icon: '🔌',
+      })
+
+      items.push({
+        id: 'n8n-test',
+        label: 'Test N8N connection',
+        icon: '🔧',
       })
     }
-
-    // General actions
-    items.push({
-      id: 'divider-3',
-      label: '',
-      divider: true,
-      disabled: true,
-    })
-
-    items.push({
-      id: 'explain',
-      label: 'Explain this',
-      icon: '❓',
-    })
-
-    items.push({
-      id: 'ask-ai',
-      label: 'Ask AI about selection...',
-      icon: '🤖',
-    })
 
     return items
   }, [selection])
