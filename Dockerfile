@@ -24,9 +24,6 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy .env file with environment variables (if exists)
-COPY .env /usr/share/nginx/html/.env
-
 # Set proper permissions
 RUN chown -R nginx:nginx /usr/share/nginx/html
 

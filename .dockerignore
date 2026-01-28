@@ -10,10 +10,11 @@ yarn.lock
 dist
 build
 
-# Local env files (will be copied separately)
+# Environment files - NEVER copy these to Docker image
 .env
 .env.local
 .env.*.local
+.env.docker-compose
 
 # IDE
 .vscode
