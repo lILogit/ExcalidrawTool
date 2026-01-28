@@ -1,55 +1,66 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { Excalidraw } from '@excalidraw/excalidraw'
+import type { ExcalidrawElement } from '@/types'
+
 import { useSelectionStore } from '@/store/selectionStore'
 import { useCanvasStore } from '@/store/canvasStore'
 import { useContextMenuStore } from '@/store/contextMenuStore'
 import { loggingService } from '@/services/loggingService'
-import type { ExcalidrawElement, ExcalidrawImperativeAPI, CanvasContext } from '@/types'
-import '@excalidraw/excalidraw/index.css'
 
-const STORAGE_KEY = 'excalidraw-ai-canvas'
-const SAVE_DELAY = 300 // Debounce save to avoid excessive writes
+const SAVE_DELAY = 1000 // Debounce delay for saving to localStorage
+const STORAGE_KEY = 'excalidraw-state'
+const CONTEXT_KEY = 'excalidraw-context'
 
-interface StorageData {
-  elements: ExcalidrawElement[]
-  canvasContext?: CanvasContext | null
-  timestamp: number
-}
-
-/**
- * Load saved canvas data from localStorage
- */
-function loadFromStorage(): { elements: ExcalidrawElement[]; canvasContext?: CanvasContext | null } | null {
+function loadFromStorage() {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const data: StorageData = JSON.parse(saved)
-      if (data.elements && Array.isArray(data.elements)) {
-        return {
-          elements: data.elements,
-          canvasContext: data.canvasContext || null,
-        }
-      }
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (!stored) return null
+
+    const parsed = JSON.parse(stored)
+    // Return only Excalidraw-compatible data structure
+    return {
+      elements: parsed.elements || [],
+      appState: parsed.appState || {},
+      scrollToContent: true,
     }
-  } catch (error) {
-    console.warn('Failed to load canvas from storage:', error)
+  } catch {
+    return null
   }
-  return null
 }
 
-/**
- * Save canvas data to localStorage
- */
-function saveToStorage(elements: readonly ExcalidrawElement[], canvasContext: CanvasContext | null): void {
+function loadCanvasContext() {
   try {
-    const data: StorageData = {
-      elements: elements.filter((el) => !el.isDeleted) as ExcalidrawElement[],
-      canvasContext,
-      timestamp: Date.now(),
+    const stored = localStorage.getItem(CONTEXT_KEY)
+    if (!stored) return null
+    return JSON.parse(stored)
+  } catch {
+    return null
+  }
+}
+
+function saveToStorage(elements: readonly ExcalidrawElement[], canvasContext: any) {
+  try {
+    // Save Excalidraw state (elements only, Excalidraw handles appState internally)
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        elements,
+        timestamp: Date.now(),
+      })
+    )
+    // Save canvas context separately
+    if (canvasContext) {
+      localStorage.setItem(
+        CONTEXT_KEY,
+        JSON.stringify({
+          ...canvasContext,
+          timestamp: Date.now(),
+        })
+      )
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   } catch (error) {
-    console.warn('Failed to save canvas to storage:', error)
+    console.warn('Failed to save to localStorage:', error)
   }
 }
 
@@ -72,22 +83,19 @@ export function ExcalidrawCanvas() {
 
   // Load initial data from localStorage
   const [initialData] = useState(() => {
-    const data = loadFromStorage()
-    // Store the loaded context to be applied after mount
-    if (data?.canvasContext && !contextInitializedRef.current) {
-      // We'll set this in useEffect since we can't call hooks in useState
-      return data
-    }
-    return data
+    return loadFromStorage()
   })
 
   // Initialize canvas context from storage on mount
   useEffect(() => {
-    if (!contextInitializedRef.current && initialData?.canvasContext) {
-      setCanvasContext(initialData.canvasContext)
+    if (!contextInitializedRef.current) {
+      const savedContext = loadCanvasContext()
+      if (savedContext) {
+        setCanvasContext(savedContext)
+      }
       contextInitializedRef.current = true
     }
-  }, [initialData, setCanvasContext])
+  }, [setCanvasContext])
 
   // Save canvas context when it changes
   useEffect(() => {
@@ -141,7 +149,7 @@ export function ExcalidrawCanvas() {
             data: {
               count: selectedIds.length,
               elementIds: selectedIds,
-              elementTypes: selectedElements.map(e => e.type),
+              elementTypes: selectedElements.map((e) => e.type),
             },
           })
         }
@@ -153,13 +161,10 @@ export function ExcalidrawCanvas() {
     [setSelection, setAllElements]
   )
 
-  const handleExcalidrawAPI = useCallback(
-    (api: ExcalidrawImperativeAPI) => {
-      // Store the API reference for external access
-      setExcalidrawAPI(api)
-    },
-    [setExcalidrawAPI]
-  )
+  const handleExcalidrawAPI = useCallback((api: ExcalidrawImperativeAPI) => {
+    // Store the API reference for external access
+    setExcalidrawAPI(api)
+  }, [setExcalidrawAPI])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -209,17 +214,19 @@ export function ExcalidrawCanvas() {
   }, [openContextMenu, closeContextMenu])
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
+    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Excalidraw
         excalidrawAPI={handleExcalidrawAPI}
         onChange={handleChange}
         initialData={initialData || undefined}
+        theme="light"
         UIOptions={{
           canvasActions: {
             loadScene: true,
             saveToActiveFile: false,
             export: { saveFileToDisk: true },
           },
+          welcomeScreen: false,
         }}
       />
     </div>
