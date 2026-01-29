@@ -23,10 +23,18 @@ class N8NListenerService {
 
   /**
    * Start listening for N8N updates
+   * Only starts if N8N webhook is configured
    */
   async start(): Promise<void> {
     if (this.enabled) {
       console.log('[N8N Listener] Already running')
+      return
+    }
+
+    // Check if N8N webhook URL is configured
+    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL
+    if (!webhookUrl) {
+      console.log('[N8N Listener] N8N webhook URL not configured, skipping listener (dev-only feature)')
       return
     }
 
