@@ -375,7 +375,7 @@ Right-click on selected elements to access AI actions:
 The app uses a custom Vite plugin (`vite-plugin-n8n-listener.ts`) for N8N bidirectional integration. The dev server:
 - Listens on `0.0.0.0:5173` (all network interfaces)
 - Proxies `/n8n-webhook` to `http://localhost:5678` for CORS avoidance
-- Provides callback endpoint at `http://localhost:5174/api/n8n/callback` for N8N responses
+- Provides callback endpoint at `http://localhost:5173/api/n8n/callback` for N8N responses
 
 ## Technologies
 
@@ -405,4 +405,4 @@ The app uses a custom Vite plugin (`vite-plugin-n8n-listener.ts`) for N8N bidire
 - **Bound Text**: Shapes with text have both container and bound text element
 - **Arrows**: Use `addConnection()` for bound arrows, `addArrow()` for free arrows
 - **State Persistence**: Canvas auto-saves to localStorage; logs persist to localStorage
-- **N8N Callback**: If N8N is in Docker, use `http://host.docker.internal:5174` for callback URL
+- **N8N Callback**: If N8N is in Docker, use `http://host.docker.internal:5173` for callback URL

@@ -120,7 +120,7 @@ services:
 
       # N8N Callback URL (auto-generated, for reference)
       # The app listens for updates from N8N at this URL:
-      # http://localhost:5174/api/n8n/callback
+      # http://localhost:5173/api/n8n/callback
       #
       # In Docker, use the service name:
       # http://excalidraw-app:8080/api/n8n/callback
@@ -129,7 +129,7 @@ services:
       # http://your-server-ip:8080/api/n8n/callback
 
       # Optional: Override the callback URL (useful for remote N8N instances)
-      # If not set, the URL is auto-generated as: http://localhost:5174/api/n8n/callback
+      # If not set, the URL is auto-generated as: http://localhost:5173/api/n8n/callback
       # Set this to your public URL or local IP for remote N8N access
       # VITE_N8N_CALLBACK_URL: ${VITE_N8N_CALLBACK_URL:-}
     networks:
