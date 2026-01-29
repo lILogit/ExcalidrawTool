@@ -73,9 +73,24 @@ export function n8nListenerPlugin(): Plugin {
 
             console.log('[N8N Callback] Received data:', callbackData)
 
+            // Handle Excalidraw clipboard format
+            // N8N might send { type: 'excalidraw/clipboard', elements: [...] }
+            // We need to extract the elements from this format
+            let processedData: N8NCallbackData = callbackData
+            if ('type' in callbackData && callbackData.type === 'excalidraw/clipboard' && 'elements' in callbackData) {
+              // Extract elements from clipboard format
+              processedData = {
+                success: true,
+                elements: (callbackData as any).elements,
+                elementsToDelete: (callbackData as any).elementsToDelete,
+                message: (callbackData as any).message || 'Elements received from N8N',
+              }
+              console.log('[N8N Callback] Converted clipboard format to standard format')
+            }
+
             // Generate unique ID for this update
             const updateId = `update-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-            pendingUpdates.set(updateId, callbackData)
+            pendingUpdates.set(updateId, processedData)
 
             // Respond to N8N
             res.writeHead(200, { 'Content-Type': 'application/json' })
