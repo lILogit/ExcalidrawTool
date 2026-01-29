@@ -170,7 +170,7 @@ export function n8nListenerPlugin(): Plugin {
             }
           }
 
-          res.setHeader('Content-Type': 'application/json')
+          res.setHeader('Content-Type', 'application/json')
           res.setHeader('Access-Control-Allow-Origin', '*')
           res.end(JSON.stringify({ updates }))
         }
