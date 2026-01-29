@@ -23,7 +23,7 @@ class N8NListenerService {
 
   /**
    * Start listening for N8N updates
-   * Only starts if N8N webhook is configured
+   * In dev mode, always start since we have the polling API
    */
   async start(): Promise<void> {
     if (this.enabled) {
@@ -31,15 +31,12 @@ class N8NListenerService {
       return
     }
 
-    // Check if N8N webhook URL is configured
     const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL
-    if (!webhookUrl) {
-      console.log('[N8N Listener] N8N webhook URL not configured, skipping listener (dev-only feature)')
-      return
-    }
 
+    // In dev mode with Vite, the polling endpoint always exists
+    // So we can start polling even if webhook URL isn't configured yet
     this.enabled = true
-    console.log('[N8N Listener] Starting to poll for updates...')
+    console.log('[N8N Listener] Starting to poll for updates...', webhookUrl ? '(N8N configured)' : '(waiting for N8N)')
 
     // Initial check
     await this.checkUpdates()
