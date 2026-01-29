@@ -120,16 +120,17 @@ class N8NListenerService {
 
   /**
    * Get the callback URL to use in N8N
+   * In production, always use window.location.origin to avoid hardcoded localhost
    */
   getCallbackUrl(): string {
-    // Check if callback URL is explicitly configured
+    // Only use configured URL if explicitly set and not localhost
     const configuredUrl = import.meta.env.VITE_N8N_CALLBACK_URL
-    if (configuredUrl) {
+    if (configuredUrl && !configuredUrl.includes('localhost') && !configuredUrl.includes('127.0.0.1')) {
       console.log('[N8N Listener] Using configured callback URL:', configuredUrl)
       return configuredUrl
     }
 
-    // Otherwise, auto-generate from current location
+    // Otherwise, auto-generate from current location (works in both dev and production)
     const autoUrl = `${window.location.origin}/api/n8n/callback`
     console.log('[N8N Listener] Using auto-generated callback URL:', autoUrl)
     return autoUrl
