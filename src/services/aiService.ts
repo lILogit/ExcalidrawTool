@@ -421,6 +421,23 @@ class AIService {
       throw new Error('Anthropic API key not configured')
     }
 
+    // Build request body - Anthropic only accepts temperature OR top_p, not both
+    // We use temperature as the primary parameter for Anthropic
+    const requestBody: Record<string, unknown> = {
+      model: this.config.model,
+      max_tokens: this.config.maxTokens,
+      system: systemPrompt,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+    }
+
+    // Only include temperature (Anthropic doesn't accept top_p with temperature)
+    if (this.config.parameters?.temperature !== undefined) {
+      requestBody.temperature = this.config.parameters.temperature
+    }
+
     const response = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
       headers: {
@@ -429,17 +446,7 @@ class AIService {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
-      body: JSON.stringify({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.parameters?.temperature,
-        top_p: this.config.parameters?.topP,
-        system: systemPrompt,
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      }),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {
@@ -548,6 +555,23 @@ class AIService {
       return
     }
 
+    // Build request body - Anthropic only accepts temperature OR top_p, not both
+    const requestBody: Record<string, unknown> = {
+      model: this.config.model,
+      max_tokens: this.config.maxTokens,
+      stream: true,
+      system: systemPrompt,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+    }
+
+    // Only include temperature (Anthropic doesn't accept top_p with temperature)
+    if (this.config.parameters?.temperature !== undefined) {
+      requestBody.temperature = this.config.parameters.temperature
+    }
+
     const response = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
       headers: {
@@ -556,18 +580,7 @@ class AIService {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
-      body: JSON.stringify({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
-        stream: true,
-        temperature: this.config.parameters?.temperature,
-        top_p: this.config.parameters?.topP,
-        system: systemPrompt,
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      }),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {
