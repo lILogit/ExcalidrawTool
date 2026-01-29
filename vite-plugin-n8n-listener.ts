@@ -44,7 +44,7 @@ export function n8nListenerPlugin(): Plugin {
 
         req.on('end', () => {
           try {
-            let callbackData: N8NCallbackData
+            let callbackData: any
 
             // Parse data from query string (GET) or body (POST)
             if (req.method === 'GET') {
@@ -67,7 +67,7 @@ export function n8nListenerPlugin(): Plugin {
                 }
               }
             } else {
-              // POST request
+              // POST request - parse as JSON first
               callbackData = JSON.parse(data)
             }
 
@@ -77,20 +77,23 @@ export function n8nListenerPlugin(): Plugin {
             // N8N might send { type: 'excalidraw/clipboard', elements: [...] }
             // We need to extract the elements from this format
             let processedData: N8NCallbackData = callbackData
-            if ('type' in callbackData && callbackData.type === 'excalidraw/clipboard' && 'elements' in callbackData) {
+            if (callbackData?.type === 'excalidraw/clipboard' && callbackData?.elements) {
               // Extract elements from clipboard format
               processedData = {
                 success: true,
-                elements: (callbackData as any).elements,
-                elementsToDelete: (callbackData as any).elementsToDelete,
-                message: (callbackData as any).message || 'Elements received from N8N',
+                elements: callbackData.elements,
+                elementsToDelete: callbackData.elementsToDelete,
+                message: callbackData.message || 'Elements received from N8N',
               }
               console.log('[N8N Callback] Converted clipboard format to standard format')
+              console.log('[N8N Callback] Processed data has', processedData.elements?.length, 'elements')
             }
 
             // Generate unique ID for this update
             const updateId = `update-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
             pendingUpdates.set(updateId, processedData)
+
+            console.log('[N8N Callback] Stored update', updateId, 'Total pending:', pendingUpdates.size)
 
             // Respond to N8N
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -99,9 +102,6 @@ export function n8nListenerPlugin(): Plugin {
               updateId,
               message: 'Update received and will be applied to canvas',
             }))
-
-            // Notify all SSE clients
-            notifyClients({ type: 'update', updateId, data: callbackData })
 
           } catch (error) {
             console.error('[N8N Callback] Error parsing request:', error)
@@ -138,6 +138,8 @@ export function n8nListenerPlugin(): Plugin {
           const url = new URL(req.url || '', `http://${req.headers.host}`)
           const lastId = url.searchParams.get('lastId')
 
+          console.log('[N8N Updates] Polling request, lastId:', lastId, 'Pending count:', pendingUpdates.size)
+
           // Get updates since last check
           const updates: Array<{ id: string; data: N8NCallbackData }> = []
 
@@ -158,6 +160,8 @@ export function n8nListenerPlugin(): Plugin {
             }
           }
 
+          console.log('[N8N Updates] Returning', updates.length, 'update(s):', updates.map(u => ({ id: u.id, hasElements: !!u.data.elements, elementCount: u.data.elements?.length })))
+
           // Clear old updates (older than 5 minutes)
           const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
           for (const [id] of pendingUpdates.entries()) {
@@ -166,7 +170,7 @@ export function n8nListenerPlugin(): Plugin {
             }
           }
 
-          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Content-Type': 'application/json')
           res.setHeader('Access-Control-Allow-Origin', '*')
           res.end(JSON.stringify({ updates }))
         }
