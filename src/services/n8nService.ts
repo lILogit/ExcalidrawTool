@@ -4,6 +4,7 @@
  */
 
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import { processN8NResponse, validateN8NResponse, EnhancedN8NWebhookResponse, N8NElementDescription } from './n8nElementCreator'
 
 export interface N8NWebhookPayload {
   // Selected elements to send to N8N
@@ -21,8 +22,8 @@ export interface N8NWebhookPayload {
 export interface N8NWebhookResponse {
   success: boolean
   message?: string
-  // Elements to create/update on canvas
-  elements?: ExcalidrawElement[]
+  // Elements to create/update on canvas (can be full elements or descriptions)
+  elements?: (ExcalidrawElement | N8NElementDescription)[]
   // Elements to delete by ID
   elementsToDelete?: string[]
   // Error message if request failed
@@ -294,6 +295,19 @@ class N8NService {
 
       if (this.debugEnabled) {
         console.log('[N8N Service] Received webhook response:', data)
+        console.log('[N8N Service] Response details:', {
+          success: data.success,
+          hasElements: !!data.elements,
+          elementsCount: data.elements?.length || 0,
+          hasElementsToDelete: !!data.elementsToDelete,
+          elementsToDeleteCount: data.elementsToDelete?.length || 0,
+          message: data.message,
+        })
+      }
+
+      // If success field is not set, assume success if we got a 200 OK
+      if (data.success === undefined) {
+        data.success = true
       }
 
       return data
@@ -314,7 +328,7 @@ class N8NService {
    */
   async applyResponse(
     response: N8NWebhookResponse,
-    api: { updateElements: (elements: ExcalidrawElement[]) => void }
+    api: { updateElements: (elements: ExcalidrawElement[]) => void; getSceneElements?: () => ExcalidrawElement[] }
   ): Promise<{
     created: string[]
     updated: string[]
@@ -326,29 +340,70 @@ class N8NService {
       deleted: [] as string[],
     }
 
+    // Get current scene elements if available
+    const currentElements = api.getSceneElements?.() || []
+
     if (response.elements && response.elements.length > 0) {
-      // Distinguish between new and updated elements based on whether they exist
-      const existingIds = new Set(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (api as any).getSceneElements?.().map((e: ExcalidrawElement) => e.id) || []
+      // Process N8N response - convert descriptions to full elements
+      const processed = processN8NResponse(
+        response as EnhancedN8NWebhookResponse,
+        currentElements as ExcalidrawElement[]
       )
 
-      response.elements.forEach((element) => {
-        if (existingIds.has(element.id)) {
-          result.updated.push(element.id)
-        } else {
-          result.created.push(element.id)
-        }
-      })
+      if (this.debugEnabled) {
+        console.log('[N8N Service] Processed elements from N8N:', {
+          received: response.elements?.length,
+          created: processed.created.length,
+          updated: processed.updated.length,
+        })
+      }
 
-      // Update the scene with new/modified elements
-      api.updateElements(response.elements)
+      // Merge N8N elements with existing elements
+      const mergedElements: ExcalidrawElement[] = [...currentElements]
+
+      for (const newElement of processed.elements) {
+        const existingIndex = mergedElements.findIndex(el => el.id === newElement.id)
+
+        if (existingIndex >= 0) {
+          // Update existing element
+          mergedElements[existingIndex] = newElement
+          result.updated.push(newElement.id)
+        } else {
+          // Add new element
+          mergedElements.push(newElement)
+          result.created.push(newElement.id)
+        }
+      }
+
+      // Update the scene with merged elements
+      api.updateElements(mergedElements)
     }
 
     if (response.elementsToDelete && response.elementsToDelete.length > 0) {
-      // Note: This requires the Excalidraw API to support deletion
-      // For now, we'll track the IDs
-      result.deleted.push(...response.elementsToDelete)
+      // Mark elements as deleted (Excalidraw convention)
+      const mergedElements = currentElements.map((el) => {
+        if (response.elementsToDelete!.includes(el.id)) {
+          return {
+            ...el,
+            isDeleted: true,
+            version: el.version + 1,
+            updated: Date.now(),
+          }
+        }
+        // Clean up bound elements references
+        if (el.boundElements?.some((b) => response.elementsToDelete!.includes(b.id))) {
+          return {
+            ...el,
+            boundElements: el.boundElements.filter((b) => !response.elementsToDelete!.includes(b.id)),
+            version: el.version + 1,
+          }
+        }
+        return el
+      })
+
+      // Update scene with deletions applied
+      api.updateElements(mergedElements)
+      result.deleted = [...response.elementsToDelete]
     }
 
     if (this.debugEnabled) {

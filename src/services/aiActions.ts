@@ -167,7 +167,8 @@ function logAIInteraction(
  */
 export async function updateWording(
   elements: ExcalidrawElement[],
-  allElements: ExcalidrawElement[]
+  allElements: ExcalidrawElement[],
+  customPrompt?: string
 ): Promise<AIActionResult[]> {
   console.log('[updateWording] Starting with', elements.length, 'elements')
   console.log('[updateWording] Elements:', elements.map(e => ({ id: e.id, type: e.type })))
@@ -210,7 +211,8 @@ export async function updateWording(
 
       console.log('[updateWording] Calling AI service...')
       // Use retry mechanism to handle empty responses
-      const enhancedPrompt = getContextEnhancedPrompt(TEXT_IMPROVEMENT_PROMPT)
+      const basePrompt = customPrompt || TEXT_IMPROVEMENT_PROMPT
+      const enhancedPrompt = getContextEnhancedPrompt(basePrompt)
       const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
         validator: ResponseValidators.notEmpty,
         onRetry: (attempt, error) => {
@@ -221,15 +223,20 @@ export async function updateWording(
       console.log('[updateWording] AI response:', response.content)
       const newText = response.content.trim()
 
-      // Log the AI interaction
+      // Log the AI interaction (note if custom prompt was used)
+      const promptUsed = customPrompt ? TEXT_IMPROVEMENT_PROMPT : '(custom)'
       logAIInteraction(
         'update-wording',
         `Improve this text: "${text}"`,
-        TEXT_IMPROVEMENT_PROMPT,
+        promptUsed,
         [element.id],
         newText,
         true
       )
+
+      if (customPrompt) {
+        console.log('[updateWording] Using custom prompt:', customPrompt.substring(0, 100) + '...')
+      }
 
       if (newText && newText !== text) {
         console.log('[updateWording] Updating element with new text:', newText)
@@ -289,7 +296,8 @@ export async function updateWording(
  */
 export async function makeConcise(
   elements: ExcalidrawElement[],
-  allElements: ExcalidrawElement[]
+  allElements: ExcalidrawElement[],
+  customPrompt?: string
 ): Promise<AIActionResult[]> {
   if (!aiService.isConfigured()) {
     return elements.map((e) => ({
@@ -324,7 +332,8 @@ export async function makeConcise(
       ]
 
       // Use retry mechanism to handle empty responses
-      const enhancedPrompt = getContextEnhancedPrompt(CONCISE_PROMPT)
+      const basePrompt = customPrompt || CONCISE_PROMPT
+      const enhancedPrompt = getContextEnhancedPrompt(basePrompt)
       const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
         validator: ResponseValidators.notEmpty,
         onRetry: (attempt, error) => {
@@ -382,7 +391,8 @@ export async function makeConcise(
  */
 export async function improveClarity(
   elements: ExcalidrawElement[],
-  allElements: ExcalidrawElement[]
+  allElements: ExcalidrawElement[],
+  customPrompt?: string
 ): Promise<AIActionResult[]> {
   if (!aiService.isConfigured()) {
     return elements.map((e) => ({
@@ -417,7 +427,8 @@ export async function improveClarity(
       ]
 
       // Use retry mechanism to handle empty responses
-      const enhancedPrompt = getContextEnhancedPrompt(CLARITY_PROMPT)
+      const basePrompt = customPrompt || CLARITY_PROMPT
+      const enhancedPrompt = getContextEnhancedPrompt(basePrompt)
       const response = await aiService.sendMessageWithRetry(messages, enhancedPrompt, {
         validator: ResponseValidators.notEmpty,
         onRetry: (attempt, error) => {

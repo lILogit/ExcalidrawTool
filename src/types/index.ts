@@ -29,6 +29,9 @@ export type {
 } from '@/types/canvasContext'
 export { DEFAULT_CANVAS_CONTEXT, getDomainDisplayName, getDomainOptions } from '@/types/canvasContext'
 
+// Re-export utility types
+export * from '@/types/utils'
+
 // Canvas/App state
 export interface CanvasState {
   isLoading: boolean

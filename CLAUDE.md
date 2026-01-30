@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ExcaliDraw AI Agent (EAA) - An AI-Human collaborative visual thinking tool built on Excalidraw that enables real-time bidirectional interaction between human visual expression and AI reasoning through contextual selection-based interfaces.
 
-**Status**: Phase 7 complete. Full AI-driven canvas manipulation, N8N webhook integration, chat panel, canvas context system, and logging service.
+**Status**: Phase 8 complete. All Phase 7 features plus custom prompt editor, enhanced utilities (validation, performance, error handling), improved N8N integration, and enterprise-grade patterns.
 
 ## Development Commands
 
@@ -53,6 +53,7 @@ The application follows a service-oriented architecture with React/Zustand for U
 3. **AI Layer**: `aiService` (Anthropic/Ollama) → `aiActions` → `actionParser` → `canvasManipulator`
 4. **Context Enrichment**: `canvasContext` system injects domain knowledge into AI prompts
 5. **Event Logging**: `loggingService` tracks all canvas and AI events for analysis
+6. **Utilities Layer**: Centralized validation, performance optimization, error handling, and type utilities
 
 ### Project Structure
 ```
@@ -63,7 +64,8 @@ src/
 │   └── UI/
 │       ├── ContextMenu.tsx         # Custom right-click context menu
 │       ├── ChatPanel.tsx           # AI chat panel for conversations
-│       └── CanvasContextModal.tsx  # Canvas context settings modal
+│       ├── CanvasContextModal.tsx  # Canvas context settings modal
+│       └── PromptEditorModal.tsx   # Custom prompt editor for AI actions
 ├── config/
 │   ├── prompts.ts                  # All AI system prompts (centralized)
 │   └── canvasContextTemplates.ts   # Predefined context templates
@@ -76,7 +78,8 @@ src/
 │   ├── actionParser.ts             # AI response → canvas commands
 │   ├── loggingService.ts           # Event logging for cognitive analysis
 │   ├── n8nService.ts               # N8N webhook client
-│   └── n8nListenerService.ts       # N8N callback listener server
+│   ├── n8nListenerService.ts       # N8N callback listener server
+│   └── n8nElementCreator.ts        # N8N element creation from descriptions
 ├── store/
 │   ├── selectionStore.ts           # Selection state with event pub/sub
 │   ├── canvasStore.ts              # Canvas/app state + canvas context
@@ -84,11 +87,17 @@ src/
 │   └── chatStore.ts                # Chat panel state
 ├── types/
 │   ├── index.ts                    # Main TypeScript definitions
-│   └── canvasContext.ts            # Canvas context types + defaults
+│   ├── canvasContext.ts            # Canvas context types + defaults
+│   ├── index-utils.ts              # Utility type definitions
+│   └── utils.ts                    # TypeScript utility types (Result, Option, etc.)
 ├── utils/
+│   ├── index.ts                    # Centralized utility exports
 │   ├── elementUtils.ts             # Element type detection, relationships, #tags
 │   ├── layoutUtils.ts              # Auto-layout algorithms
-│   └── visualFeedback.ts           # AI change highlighting/animations
+│   ├── visualFeedback.ts           # AI change highlighting/animations
+│   ├── validationUtils.ts          # Input validation and sanitization
+│   ├── performanceUtils.ts         # Debounce, throttle, memoize, caching
+│   └── errorUtils.ts               # Custom error classes and Result types
 ├── App.tsx                         # Main app (routes actions, N8N integration)
 ├── main.tsx                        # Entry point
 └── index.css                       # Global styles
@@ -117,7 +126,7 @@ const arrowId = canvasManipulator.addConnection(fromId, toId, { label: 'causes' 
 canvasManipulator.updateElement(id, { backgroundColor: '#ffcccc' })
 canvasManipulator.updateText(id, 'New text')
 canvasManipulator.moveElement(id, 50, 0)
-canvasManiputor.setStyle(id, { strokeWidth: 3 })
+canvasManipulator.setStyle(id, { strokeWidth: 3 })
 
 // Delete
 canvasManipulator.deleteElement(id)
@@ -134,7 +143,7 @@ import { aiService, ResponseValidators } from '@/services/aiService'
 // Initialize (done in App.tsx)
 aiService.initialize({
   provider: 'anthropic',
-  apiKey: 'sk-ant-xxx',
+  apiKey: 'sk-ant-your-key-here',
   model: 'claude-sonnet-4-20250514',
   maxTokens: 4096,
   parameters: { temperature: 0.7, topP: 0.9 }
@@ -251,9 +260,9 @@ useCanvasStore.getState().setCanvasContext({
 })
 ```
 
-### N8N Integration (`src/services/n8nService.ts`)
+### N8N Integration (`src/services/n8nService.ts` + `n8nElementCreator.ts`)
 
-Bidirectional webhook integration for external AI workflows.
+Bidirectional webhook integration for external AI workflows with enhanced element creation.
 
 ```typescript
 import { n8nService } from '@/services/n8nService'
@@ -271,8 +280,17 @@ if (n8nService.isConfigured()) {
   )
 
   // Response format: { success, message?, elements?, elementsToDelete? }
+  // Elements can be full ExcalidrawElement objects OR simplified descriptions
 
-  // Apply response to canvas
+  // Simplified element description from N8N:
+  // {
+  //   type: 'rectangle' | 'ellipse' | 'diamond' | 'text',
+  //   x: 100, y: 100, width: 150, height: 80,
+  //   text: 'Label', strokeColor: '#1e1e1e',
+  //   fromId: 'abc', toId: 'def'  // for connections
+  // }
+
+  // Apply response to canvas (handles both create and update)
   await n8nService.applyResponse(response, {
     updateElements: (elements) => api.updateScene({ elements })
   })
@@ -360,15 +378,17 @@ Right-click on selected elements to access AI actions:
 
 | Action | Selection Required | Description |
 |--------|-------------------|-------------|
-| Update wording | Text or shapes | Improve wording while keeping meaning |
-| Improve clarity | Text or shapes | Make text clearer |
-| Make concise | Text or shapes | Shorten text |
+| Update wording | Text or shapes | Improve wording while keeping meaning (supports custom prompts) |
+| Improve clarity | Text or shapes | Make text clearer (supports custom prompts) |
+| Make concise | Text or shapes | Shorten text (supports custom prompts) |
 | Suggest connections | 2+ shapes | AI suggests and adds arrows with labels |
 | Expand concept | 1 element | Generate related child concepts |
 | Explain | Any | Explain selection in chat panel |
 | Summarize | Any | Summarize with key points in chat |
 | Send to N8N | 1+ elements | Send selection to N8N webhook |
 | Test N8N | None | Test webhook connection |
+
+**Custom Prompts**: The text improvement actions (Update wording, Improve clarity, Make concise) now support custom prompts via the PromptEditorModal. Prompts can be saved, loaded, and deleted from localStorage.
 
 ## Vite Configuration
 
@@ -396,6 +416,7 @@ The app uses a custom Vite plugin (`vite-plugin-n8n-listener.ts`) for N8N bidire
 - **Phase 5**: Canvas Manipulation - Programmatic element control + layouts
 - **Phase 6**: Action Parser - AI response → canvas commands
 - **Phase 7**: Advanced Features - N8N integration, chat panel, canvas context, logging
+- **Phase 8**: Enterprise Features - Custom prompt editor, utility modules (validation, performance, error handling), enhanced N8N element creation
 
 ## Important Notes
 
@@ -406,3 +427,51 @@ The app uses a custom Vite plugin (`vite-plugin-n8n-listener.ts`) for N8N bidire
 - **Arrows**: Use `addConnection()` for bound arrows, `addArrow()` for free arrows
 - **State Persistence**: Canvas auto-saves to localStorage; logs persist to localStorage
 - **N8N Callback**: If N8N is in Docker, use `http://host.docker.internal:5173` for callback URL
+
+## Utility Modules
+
+Comprehensive utility functions available via `src/utils/index.ts`:
+
+```typescript
+import * as utils from '@/utils'
+
+// Validation
+utils.validateAIResponse(content)
+utils.validateNotEmpty(value)
+utils.sanitizeInput(input)  // XSS prevention
+utils.validateCanvasActions(actions)
+
+// Performance
+const debouncedFn = utils.debounce(fn, 300)
+const throttledFn = utils.throttle(fn, 100)
+const memoizedFn = utils.memoize(expensiveFn)
+const cached = utils.cacheWithTTL(getData, 5000)
+const limited = utils.rateLimit(fn, 10, 1000)  // 10 calls per second
+
+// Error Handling
+try {
+  // ... code that might fail
+} catch (error) {
+  throw new utils.AIServiceError('AI request failed', error)
+}
+
+// Result type pattern for functional error handling
+const result = utils.safeParse(jsonString)
+if (result.ok) {
+  console.log(result.value)
+} else {
+  console.error(result.error)
+}
+```
+
+## Custom Prompt Editor
+
+The PromptEditorModal component allows users to customize AI prompts for text improvement actions:
+
+- **Edit prompts**: Modify the system prompts used for "Update wording", "Improve clarity", and "Make concise"
+- **Save prompts**: Store custom prompts in localStorage with custom names
+- **Load prompts**: Quick access to previously saved prompts
+- **Delete prompts**: Remove saved prompts that are no longer needed
+- **Reset to default**: Restore the original default prompt
+
+Prompts are persisted across sessions using the key `excalidraw-saved-prompts`.

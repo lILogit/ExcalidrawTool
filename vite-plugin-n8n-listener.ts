@@ -8,13 +8,17 @@ export interface N8NCallbackData {
   success?: boolean
 }
 
+// Use globalThis to persist across Vite HMR module reloads
+// @ts-ignore - globalThis.pendingUpdatesN8N is custom
+if (!(globalThis as any).pendingUpdatesN8N) {
+  (globalThis as any).pendingUpdatesN8N = new Map<string, N8NCallbackData>()
+}
+
 /**
  * Vite plugin to handle N8N callback API
  * Listens for GET/POST requests from N8N with Excalidraw objects
  */
 export function n8nListenerPlugin(): Plugin {
-  // Store pending updates
-  const pendingUpdates = new Map<string, N8NCallbackData>()
   const sseClients = new Set<NodeJS.ReadableStream>()
 
   return {
@@ -90,10 +94,15 @@ export function n8nListenerPlugin(): Plugin {
             }
 
             // Generate unique ID for this update
-            const updateId = `update-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-            pendingUpdates.set(updateId, processedData)
+            const timestamp = String(Date.now())
+            const randomStr = String(Math.random().toString(36))
+            const shortRandom = randomStr.slice(2, 11)
+            const updateId = `update-${timestamp}-${shortRandom}`
 
-            console.log('[N8N Callback] Stored update', updateId, 'Total pending:', pendingUpdates.size)
+            // Store update with timestamp for tracking
+            ;(globalThis as any).pendingUpdatesN8N.set(updateId, processedData)
+
+            console.log('[N8N Callback] Stored update', updateId, '| Elements:', processedData.elements?.length || 0, '| Total pending:', (globalThis as any).pendingUpdatesN8N.size)
 
             // Respond to N8N
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -132,43 +141,127 @@ export function n8nListenerPlugin(): Plugin {
         })
       })
 
+      // Health check endpoint for Docker and monitoring
+      server.middlewares.use('/health', (req, res) => {
+        if (req.method === 'GET') {
+          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.writeHead(200)
+          res.end(JSON.stringify({
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            service: 'excalidraw-ai-agent',
+            version: process.env.npm_package_version || '1.0.0',
+            pendingUpdates: (globalThis as any).pendingUpdatesN8N?.size || 0
+          }))
+        } else {
+          res.writeHead(405)
+          res.end('Method Not Allowed')
+        }
+      })
+
+      // Test endpoint to verify N8N integration
+      server.middlewares.use('/api/n8n/test', (req, res) => {
+        if (req.method === 'GET') {
+          const testData = {
+            success: true,
+            message: 'Test element from N8N',
+            elements: [
+              {
+                type: 'rectangle',
+                x: 100,
+                y: 100,
+                width: 200,
+                height: 100,
+                text: 'Test from N8N!',
+                backgroundColor: '#d0ebff',
+                strokeColor: '#1971c2'
+              }
+            ]
+          }
+
+          const timestamp = String(Date.now())
+          const randomStr = String(Math.random().toString(36))
+          const shortRandom = randomStr.slice(2, 11)
+          const updateId = `test-${timestamp}-${shortRandom}`
+
+          ;(globalThis as any).pendingUpdatesN8N.set(updateId, testData)
+
+          console.log('[N8N Test] Created test update:', updateId, '| Elements:', testData.elements?.length || 0)
+
+          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.end(JSON.stringify({
+            success: true,
+            message: 'Test update created - check your canvas in 2 seconds',
+            updateId
+          }))
+        } else {
+          res.writeHead(405)
+          res.end('Method Not Allowed')
+        }
+      })
+
       // Endpoint to get pending updates (polling alternative)
       server.middlewares.use('/api/n8n/updates', (req, res) => {
         if (req.method === 'GET') {
           const url = new URL(req.url || '', `http://${req.headers.host}`)
           const lastId = url.searchParams.get('lastId')
 
-          console.log('[N8N Updates] Polling request, lastId:', lastId, 'Pending count:', pendingUpdates.size)
+          console.log('[N8N Updates] Polling request, lastId:', lastId, 'Pending count:', (globalThis as any).pendingUpdatesN8N.size)
 
           // Get updates since last check
           const updates: Array<{ id: string; data: N8NCallbackData }> = []
 
           if (lastId) {
-            // Get all updates after the specified ID
-            let found = false
-            for (const [id, data] of pendingUpdates.entries()) {
-              if (found) {
+            // Check if the lastId is still in the map
+            if ((globalThis as any).pendingUpdatesN8N.has(lastId)) {
+              // Get all updates after the specified ID
+              let found = false
+              for (const [id, data] of (globalThis as any).pendingUpdatesN8N.entries()) {
+                if (found) {
+                  updates.push({ id, data })
+                } else if (id === lastId) {
+                  found = true
+                }
+              }
+            } else {
+              // lastId is not in the map (stale or map was cleared)
+              // Return ALL pending updates to resync
+              console.log('[N8N Updates] lastId not found in pending updates, returning all')
+              for (const [id, data] of (globalThis as any).pendingUpdatesN8N.entries()) {
                 updates.push({ id, data })
-              } else if (id === lastId) {
-                found = true
               }
             }
           } else {
             // Get all pending updates
-            for (const [id, data] of pendingUpdates.entries()) {
+            for (const [id, data] of (globalThis as any).pendingUpdatesN8N.entries()) {
               updates.push({ id, data })
             }
           }
 
           console.log('[N8N Updates] Returning', updates.length, 'update(s):', updates.map(u => ({ id: u.id, hasElements: !!u.data.elements, elementCount: u.data.elements?.length })))
+          console.log('[N8N Updates] Update IDs:', updates.map(u => u.id))
+          // Log actual update data for debugging
+          updates.forEach((u, idx) => {
+            console.log(`[N8N Updates] Update ${idx} data:`, JSON.stringify(u.data).substring(0, 200) + '...')
+          })
 
-          // Clear old updates (older than 5 minutes)
+          // Remove delivered updates from the map to prevent accumulation
+          console.log('[N8N Updates] Deleting delivered updates from map')
+          for (const update of updates) {
+            (globalThis as any).pendingUpdatesN8N.delete(update.id)
+          }
+
+          // Also clear old updates (older than 5 minutes) as fallback
           const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
-          for (const [id] of pendingUpdates.entries()) {
+          for (const [id] of (globalThis as any).pendingUpdatesN8N.entries()) {
             if (id.startsWith('update-') && parseInt(id.split('-')[1]) < fiveMinutesAgo) {
-              pendingUpdates.delete(id)
+              (globalThis as any).pendingUpdatesN8N.delete(id)
             }
           }
+
+          console.log('[N8N Updates] Remaining pending updates:', (globalThis as any).pendingUpdatesN8N.size)
 
           res.setHeader('Content-Type', 'application/json')
           res.setHeader('Access-Control-Allow-Origin', '*')

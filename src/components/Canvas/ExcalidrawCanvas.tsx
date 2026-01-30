@@ -18,13 +18,33 @@ function loadFromStorage() {
     if (!stored) return null
 
     const parsed = JSON.parse(stored)
+
+    // Validate that elements is an array
+    if (!parsed.elements || !Array.isArray(parsed.elements)) {
+      console.warn('[ExcalidrawCanvas] Invalid elements in storage, clearing...')
+      localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+
+    // Validate each element has required properties
+    const validElements = parsed.elements.filter((el: any) => {
+      return el && typeof el === 'object' && el.type && el.id
+    })
+
+    if (validElements.length !== parsed.elements.length) {
+      console.warn(`[ExcalidrawCanvas] Filtered ${parsed.elements.length - validElements.length} invalid elements`)
+    }
+
     // Return only Excalidraw-compatible data structure
     return {
-      elements: parsed.elements || [],
+      elements: validElements,
       appState: parsed.appState || {},
       scrollToContent: true,
     }
-  } catch {
+  } catch (error) {
+    console.warn('[ExcalidrawCanvas] Failed to load from storage:', error)
+    // Clear corrupted data
+    localStorage.removeItem(STORAGE_KEY)
     return null
   }
 }
@@ -81,10 +101,45 @@ export function ExcalidrawCanvas() {
   // Track if context has been initialized from storage
   const contextInitializedRef = useRef(false)
 
-  // Load initial data from localStorage
-  const [initialData] = useState(() => {
-    return loadFromStorage()
+  // Load initial data from localStorage with validation
+  const [initialData, setInitialData] = useState(() => {
+    const data = loadFromStorage()
+
+    // Ensure the data structure is valid for Excalidraw
+    if (data && data.elements) {
+      // Validate that we have a proper elements array
+      if (!Array.isArray(data.elements)) {
+        console.warn('[ExcalidrawCanvas] Invalid elements array, starting fresh')
+        return null
+      }
+
+      // Log loaded data for debugging
+      console.log('[ExcalidrawCanvas] Loaded', data.elements.length, 'elements from storage')
+
+      return {
+        elements: data.elements,
+        appState: data.appState || {},
+        scrollToContent: true,
+      }
+    }
+
+    return null
   })
+
+  // Add timeout to detect if Excalidraw is stuck loading
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      // If Excalidraw API is not initialized after 5 seconds, clear storage and reload
+      const api = useCanvasStore.getState().excalidrawAPI
+      if (!api && initialData) {
+        console.warn('[ExcalidrawCanvas] Excalidraw did not initialize, clearing corrupted data')
+        localStorage.removeItem(STORAGE_KEY)
+        setInitialData(null)
+      }
+    }, 5000)
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   // Initialize canvas context from storage on mount
   useEffect(() => {
@@ -162,8 +217,17 @@ export function ExcalidrawCanvas() {
   )
 
   const handleExcalidrawAPI = useCallback((api: ExcalidrawImperativeAPI) => {
-    // Store the API reference for external access
-    setExcalidrawAPI(api)
+    try {
+      // Store the API reference for external access
+      console.log('[ExcalidrawCanvas] Excalidraw API initialized successfully')
+      setExcalidrawAPI(api)
+
+      // Test API by getting current scene elements
+      const elements = api.getSceneElements()
+      console.log('[ExcalidrawCanvas] Current scene has', elements?.length || 0, 'elements')
+    } catch (error) {
+      console.error('[ExcalidrawCanvas] Error initializing Excalidraw API:', error)
+    }
   }, [setExcalidrawAPI])
 
   // Cleanup on unmount

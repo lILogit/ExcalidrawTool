@@ -1,4 +1,6 @@
 import type { AIMessage, AIResponse, AIStreamChunk, AIServiceConfig, AIProvider, AIResponseStats, ModelParameters } from '@/types'
+import { retryWithBackoff, withTimeout } from '@/utils/performanceUtils'
+import { AIServiceError, AIRequestError, AIResponseError, AIRetryExhaustedError } from '@/utils/errorUtils'
 
 // Default configuration from environment
 const DEFAULT_ANTHROPIC_MODEL = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'

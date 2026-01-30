@@ -1,12 +1,15 @@
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState, useRef } from 'react'
 import { ExcalidrawCanvas } from '@/components/Canvas/ExcalidrawCanvas'
 import { ContextMenu } from '@/components/UI/ContextMenu'
 import { ChatPanel } from '@/components/UI/ChatPanel'
 import { CanvasContextModal } from '@/components/UI/CanvasContextModal'
+import { PromptEditorModal } from '@/components/UI/PromptEditorModal'
 import { aiService } from '@/services/aiService'
 import { n8nService } from '@/services/n8nService'
 import { n8nListenerService } from '@/services/n8nListenerService'
+import { processN8NResponse, EnhancedN8NWebhookResponse } from '@/services/n8nElementCreator'
 import { updateWording, makeConcise, improveClarity, expandConcept, suggestConnections, explainDiagram, summarizeDiagram } from '@/services/aiActions'
+import { TEXT_IMPROVEMENT_PROMPT, CONCISE_PROMPT, CLARITY_PROMPT } from '@/config/prompts'
 import { useSelection } from '@/hooks/useSelection'
 import { useChatStore } from '@/store/chatStore'
 import { useCanvasStore } from '@/store/canvasStore'
@@ -17,8 +20,19 @@ function App() {
   const selection = useSelection()
   const [isProcessing, setIsProcessing] = useState(false)
   const [isContextModalOpen, setIsContextModalOpen] = useState(false)
+  const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false)
+  const [pendingPromptAction, setPendingPromptAction] = useState<{
+    type: 'update-wording' | 'improve-clarity' | 'make-concise'
+    selectedElements: ExcalidrawElement[]
+    allElements: ExcalidrawElement[]
+    defaultPrompt: string
+    promptTitle: string
+  } | null>(null)
   const canvasContext = useCanvasStore((state) => state.canvasContext)
   const excalidrawAPI = useCanvasStore((state) => state.excalidrawAPI)
+
+  // Track if N8N listener has been initialized to prevent duplicates from React Strict Mode
+  const n8nInitializedRef = useRef(false)
 
   // Initialize AI service with provider from environment
   useEffect(() => {
@@ -47,20 +61,39 @@ function App() {
 
   // Start N8N listener to receive canvas updates from N8N
   useEffect(() => {
-    n8nListenerService.start()
+    console.log('[N8N] useEffect running, excalidrawAPI:', !!excalidrawAPI)
 
-    const callbackUrl = n8nListenerService.getCallbackUrl()
-    console.log('[N8N] Callback URL:', callbackUrl)
-    console.log('[N8N] Use this URL in your N8N HTTP Request node')
+    // Start the listener service (only once)
+    if (!n8nInitializedRef.current) {
+      n8nInitializedRef.current = true
+      n8nListenerService.start()
+
+      const callbackUrl = n8nListenerService.getCallbackUrl()
+      console.log('[N8N] Callback URL:', callbackUrl)
+      console.log('[N8N] Use this URL in your N8N HTTP Request node')
+    }
 
     // Subscribe to updates from N8N
     const unsubscribe = n8nListenerService.onUpdate(async (update) => {
-      console.log('[N8N] Received update:', update)
+      console.log('[N8N] ===== UPDATE RECEIVED =====')
+      console.log('[N8N] Update object:', update)
+      console.log('[N8N] Update data:', update.data)
 
       const { elements, elementsToDelete, message } = update.data
+      console.log('[N8N] Extracted - message:', message)
+      console.log('[N8N] Extracted - elements:', elements)
+      console.log('[N8N] Extracted - elementsToDelete:', elementsToDelete)
+      console.log('[N8N] ExcalidrawAPI available:', !!excalidrawAPI)
+
+      // If no API available yet, skip processing but keep the update
+      if (!excalidrawAPI) {
+        console.warn('[N8N] No ExcalidrawAPI available, skipping update processing')
+        return
+      }
 
       // Show notification
       if (message) {
+        console.log('[N8N] Showing toast for message:', message)
         showAIActionToast(`N8N: ${message}`, 'info')
       }
 
@@ -69,50 +102,68 @@ function App() {
         // Get current scene elements
         const sceneElements = excalidrawAPI.getSceneElements() as ExcalidrawElement[]
 
-        // Create a map of existing elements for quick lookup
-        const existingElementsMap = new Map<string, ExcalidrawElement>()
-        for (const el of sceneElements) {
-          existingElementsMap.set(el.id, el)
+        // Process N8N response - converts element descriptions to full Excalidraw elements
+        const n8nResponse: EnhancedN8NWebhookResponse = {
+          success: true,
+          message,
+          elements,
+          elementsToDelete,
         }
 
-        // Track updated and new element IDs
-        const updatedIds: string[] = []
-        const newIds: string[] = []
+        const processed = processN8NResponse(n8nResponse, sceneElements)
+
+        console.log('[N8N] Processed elements:', {
+          received: elements?.length || 0,
+          created: processed.created.length,
+          updated: processed.updated.length,
+          deleted: processed.deleted.length,
+        })
 
         // Merge N8N elements with existing elements
         const mergedElements: ExcalidrawElement[] = [...sceneElements]
 
-        if (elements && elements.length > 0) {
-          for (const newElement of elements) {
-            const existingIndex = mergedElements.findIndex(el => el.id === newElement.id)
+        for (const newElement of processed.elements) {
+          const existingIndex = mergedElements.findIndex(el => el.id === newElement.id)
 
-            if (existingIndex >= 0) {
-              // Update existing element
-              mergedElements[existingIndex] = newElement
-              updatedIds.push(newElement.id)
-            } else {
-              // Add new element
-              mergedElements.push(newElement)
-              newIds.push(newElement.id)
-            }
+          if (existingIndex >= 0) {
+            // Update existing element
+            mergedElements[existingIndex] = newElement
+          } else {
+            // Add new element
+            mergedElements.push(newElement)
           }
         }
 
-        // Remove elements marked for deletion
-        if (elementsToDelete && elementsToDelete.length > 0) {
-          const deletedCount = mergedElements.length
-          const finalElements = mergedElements.filter(el => !elementsToDelete.includes(el.id))
-          const actuallyDeleted = deletedCount - finalElements.length
+        // Handle deletions
+        if (processed.deleted.length > 0) {
+          // Mark elements as deleted (Excalidraw convention)
+          const finalElements = mergedElements.map((el) => {
+            if (processed.deleted.includes(el.id)) {
+              return {
+                ...el,
+                isDeleted: true,
+                version: el.version + 1,
+                updated: Date.now(),
+              }
+            }
+            // Clean up bound elements references
+            if (el.boundElements?.some((b) => processed.deleted.includes(b.id))) {
+              return {
+                ...el,
+                boundElements: el.boundElements.filter((b) => !processed.deleted.includes(b.id)),
+                version: el.version + 1,
+              }
+            }
+            return el
+          })
 
-          // Update the entire scene with merged elements
+          // Update the entire scene
           excalidrawAPI.updateScene({
             elements: finalElements,
           })
 
-          if (actuallyDeleted > 0) {
-            showAIActionToast(`Deleted ${actuallyDeleted} element(s) from N8N`, 'info')
-          }
-        } else if (elements && elements.length > 0) {
+          showAIActionToast(`Deleted ${processed.deleted.length} element(s) from N8N`, 'info')
+        } else if (processed.elements.length > 0) {
           // Update the entire scene with merged elements
           excalidrawAPI.updateScene({
             elements: mergedElements,
@@ -120,10 +171,10 @@ function App() {
         }
 
         // Show feedback for updated/new elements
-        if (updatedIds.length > 0 || newIds.length > 0) {
-          const allChangedIds = [...updatedIds, ...newIds]
-          const message = `Updated ${updatedIds.length} and added ${newIds.length} element(s) from N8N`
-          showAIChangeFeedback(allChangedIds, message)
+        if (processed.created.length > 0 || processed.updated.length > 0) {
+          const allChangedIds = [...processed.created, ...processed.updated]
+          const feedbackMessage = `Added ${processed.created.length} and updated ${processed.updated.length} element(s) from N8N`
+          showAIChangeFeedback(allChangedIds, feedbackMessage)
         }
       } else {
         console.warn('[N8N] Excalidraw API not available, cannot apply updates')
@@ -131,10 +182,61 @@ function App() {
     })
 
     return () => {
+      // Only unsubscribe this callback, don't stop the listener service
+      // The service should keep running across re-renders
+      console.log('[N8N] Cleaning up listener callback')
       unsubscribe()
-      n8nListenerService.stop()
     }
   }, [excalidrawAPI])
+
+  // Handle prompt editor confirmation
+  const handlePromptConfirm = useCallback((customPrompt: string) => {
+    if (!pendingPromptAction) return
+
+    const { type, selectedElements, allElements } = pendingPromptAction
+    console.log(`[App] Executing ${type} with custom prompt`)
+
+    // Execute the appropriate action with custom prompt
+    const executeAction = async () => {
+      setIsProcessing(true)
+      try {
+        let results
+
+        switch (type) {
+          case 'update-wording':
+            results = await updateWording(selectedElements, allElements, customPrompt)
+            break
+          case 'improve-clarity':
+            results = await improveClarity(selectedElements, allElements, customPrompt)
+            break
+          case 'make-concise':
+            results = await makeConcise(selectedElements, allElements, customPrompt)
+            break
+          default:
+            return
+        }
+
+        // Process results
+        if (results) {
+          const successIds = results.filter((r: any) => r.success).map((r: any) => r.elementId)
+          results.forEach((r: any) => {
+            if (r.success && r.newText) {
+              console.log(`Updated: "${r.originalText}" → "${r.newText}"`)
+            } else if (r.error) {
+              console.error(`Error: ${r.error}`)
+            }
+          })
+          if (successIds.length > 0) {
+            showAIChangeFeedback(successIds, `Updated ${successIds.length} element(s)`)
+          }
+        }
+      } finally {
+        setIsProcessing(false)
+      }
+    }
+
+    executeAction()
+  }, [pendingPromptAction])
 
   // Handle context menu actions
   const handleContextMenuAction = useCallback(
@@ -149,82 +251,50 @@ function App() {
       // Handle different actions
       switch (actionId) {
         case 'update-wording':
-          console.log('[App] update-wording action, selectedElements:', selectedElements.length, 'allElements:', allElements.length)
           if (selectedElements.length > 0) {
-            setIsProcessing(true)
-            console.log('[App] Updating wording with AI...', selectedElements.map(e => ({ id: e.id, type: e.type })))
-            try {
-              const results = await updateWording(
-                selectedElements,
-                allElements
-              )
-              console.log('[App] updateWording results:', results)
-              const successIds = results.filter(r => r.success).map(r => r.elementId)
-              results.forEach((r) => {
-                if (r.success && r.newText) {
-                  console.log(`Updated: "${r.originalText}" → "${r.newText}"`)
-                } else if (r.error) {
-                  console.error(`Error: ${r.error}`)
-                }
-              })
-              if (successIds.length > 0) {
-                showAIChangeFeedback(successIds, `Updated ${successIds.length} element(s)`)
-              }
-            } finally {
-              setIsProcessing(false)
-            }
+            // Open prompt editor
+            setPendingPromptAction({
+              type: 'update-wording',
+              selectedElements,
+              allElements,
+              defaultPrompt: TEXT_IMPROVEMENT_PROMPT,
+              promptTitle: 'Update Wording - Edit Prompt',
+            })
+            setIsPromptEditorOpen(true)
+          } else {
+            showAIActionToast('Select at least 1 element with text', 'info')
           }
           break
 
         case 'improve-clarity':
           if (selectedElements.length > 0) {
-            setIsProcessing(true)
-            console.log('Improving clarity with AI...')
-            try {
-              const results = await improveClarity(
-                selectedElements,
-                allElements
-              )
-              const successIds = results.filter(r => r.success).map(r => r.elementId)
-              results.forEach((r) => {
-                if (r.success && r.newText) {
-                  console.log(`Improved: "${r.originalText}" → "${r.newText}"`)
-                } else if (r.error) {
-                  console.error(`Error: ${r.error}`)
-                }
-              })
-              if (successIds.length > 0) {
-                showAIChangeFeedback(successIds, `Improved ${successIds.length} element(s)`)
-              }
-            } finally {
-              setIsProcessing(false)
-            }
+            // Open prompt editor
+            setPendingPromptAction({
+              type: 'improve-clarity',
+              selectedElements,
+              allElements,
+              defaultPrompt: CLARITY_PROMPT,
+              promptTitle: 'Improve Clarity - Edit Prompt',
+            })
+            setIsPromptEditorOpen(true)
+          } else {
+            showAIActionToast('Select at least 1 element with text', 'info')
           }
           break
 
         case 'make-concise':
           if (selectedElements.length > 0) {
-            setIsProcessing(true)
-            console.log('Making concise with AI...')
-            try {
-              const results = await makeConcise(
-                selectedElements,
-                allElements
-              )
-              const successIds = results.filter(r => r.success).map(r => r.elementId)
-              results.forEach((r) => {
-                if (r.success && r.newText) {
-                  console.log(`Shortened: "${r.originalText}" → "${r.newText}"`)
-                } else if (r.error) {
-                  console.error(`Error: ${r.error}`)
-                }
-              })
-              if (successIds.length > 0) {
-                showAIChangeFeedback(successIds, `Shortened ${successIds.length} element(s)`)
-              }
-            } finally {
-              setIsProcessing(false)
-            }
+            // Open prompt editor
+            setPendingPromptAction({
+              type: 'make-concise',
+              selectedElements,
+              allElements,
+              defaultPrompt: CONCISE_PROMPT,
+              promptTitle: 'Make Concise - Edit Prompt',
+            })
+            setIsPromptEditorOpen(true)
+          } else {
+            showAIActionToast('Select at least 1 element with text', 'info')
           }
           break
 
@@ -348,19 +418,32 @@ function App() {
                 'process'
               )
 
-              if (response.success) {
-                console.log('N8N webhook response:', response)
+              console.log('N8N webhook full response:', response)
+              console.log('N8N webhook response details:', {
+                success: response.success,
+                hasElements: !!response.elements,
+                elementsCount: response.elements?.length || 0,
+                hasElementsToDelete: !!response.elementsToDelete,
+                elementsToDeleteCount: response.elementsToDelete?.length || 0,
+                message: response.message,
+                error: response.error,
+              })
 
-                // Apply response to canvas if there are elements to update
+              if (response.success !== false) {  // Treat undefined as success
+                // Apply response to canvas
                 const api = useCanvasStore.getState().excalidrawAPI
-                if (api && (response.elements || response.elementsToDelete)) {
+                if (api) {
                   const result = await n8nService.applyResponse(response, {
+                    getSceneElements: () => api.getSceneElements() as ExcalidrawElement[],
                     updateElements: (elements) => {
+                      console.log('[N8N] Updating canvas with', elements.length, 'elements')
                       api.updateScene({
                         elements,
                       })
                     },
                   })
+
+                  console.log('[N8N] Canvas update result:', result)
 
                   // Show feedback
                   const messages: string[] = []
@@ -377,8 +460,14 @@ function App() {
                   if (affectedIds.length > 0) {
                     showAIChangeFeedback(affectedIds, response.message || 'Canvas updated by N8N')
                   }
-                } else if (response.message) {
-                  showAIActionToast(response.message, 'success')
+
+                  // If no elements were changed but we got a message, show it
+                  if (messages.length === 0 && response.message) {
+                    showAIActionToast(`N8N: ${response.message}`, 'success')
+                  }
+                } else {
+                  console.warn('[N8N] Excalidraw API not available')
+                  showAIActionToast('Canvas API not available', 'error')
                 }
               } else {
                 showAIActionToast(response.error || 'N8N webhook request failed', 'error')
@@ -406,9 +495,16 @@ function App() {
                 'analyze'
               )
 
-              if (response.success) {
-                console.log('N8N analysis response:', response)
+              console.log('N8N analysis full response:', response)
+              console.log('N8N analysis response details:', {
+                success: response.success,
+                hasElements: !!response.elements,
+                elementsCount: response.elements?.length || 0,
+                message: response.message,
+                error: response.error,
+              })
 
+              if (response.success !== false) {
                 // Show results in chat panel
                 useChatStore.getState().openChat()
                 useChatStore.getState().addMessage({
@@ -419,13 +515,23 @@ function App() {
                 // Apply any canvas updates from the analysis
                 const api = useCanvasStore.getState().excalidrawAPI
                 if (api && response.elements) {
-                  await n8nService.applyResponse(response, {
+                  const result = await n8nService.applyResponse(response, {
+                    getSceneElements: () => api.getSceneElements() as ExcalidrawElement[],
                     updateElements: (elements) => {
+                      console.log('[N8N Analysis] Updating canvas with', elements.length, 'elements')
                       api.updateScene({
                         elements,
                       })
                     },
                   })
+
+                  console.log('[N8N Analysis] Canvas update result:', result)
+
+                  // Show feedback for canvas changes
+                  const affectedIds = [...result.created, ...result.updated]
+                  if (affectedIds.length > 0) {
+                    showAIChangeFeedback(affectedIds, `Analysis: ${result.created.length} created, ${result.updated.length} updated`)
+                  }
                 }
               } else {
                 showAIActionToast(response.error || 'N8N analysis failed', 'error')
@@ -497,6 +603,13 @@ function App() {
       <CanvasContextModal
         isOpen={isContextModalOpen}
         onClose={() => setIsContextModalOpen(false)}
+      />
+      <PromptEditorModal
+        isOpen={isPromptEditorOpen}
+        onClose={() => setIsPromptEditorOpen(false)}
+        defaultPrompt={pendingPromptAction?.defaultPrompt || ''}
+        promptTitle={pendingPromptAction?.promptTitle || 'Edit Prompt'}
+        onConfirm={handlePromptConfirm}
       />
 
       {/* Canvas Context Button */}
