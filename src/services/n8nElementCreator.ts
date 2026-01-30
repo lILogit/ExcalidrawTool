@@ -114,10 +114,11 @@ export function createElementFromDescription(
         const textElement: Partial<ExcalidrawElement> = {
           id: textId,
           type: 'text',
-          x: x + width / 2,
-          y: y + height / 2,
-          width: width - 40,
-          height: desc.fontSize ? desc.fontSize * 1.5 : 24,
+          // Position at center - Excalidraw will handle positioning when autoResize is true
+          x: x,
+          y: y,
+          width: width,
+          height: height,
           text: desc.text || desc.label || '',
           originalText: desc.text || desc.label || '',
           fontSize: desc.fontSize || 16,
