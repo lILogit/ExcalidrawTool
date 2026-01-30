@@ -14,6 +14,7 @@ import { useSelection } from '@/hooks/useSelection'
 import { useChatStore } from '@/store/chatStore'
 import { useCanvasStore } from '@/store/canvasStore'
 import { showAIChangeFeedback, showAIActionToast } from '@/utils/visualFeedback'
+import { getElementText } from '@/utils/elementUtils'
 import type { ExcalidrawElement } from '@/types'
 
 function App() {
@@ -412,10 +413,41 @@ function App() {
             setIsProcessing(true)
             console.log('Sending to N8N webhook...')
             try {
+              // Extract tags from selected elements
+              const extractedTags = new Set<string>()
+              for (const el of selectedElements) {
+                const text = getElementText(el, allElements)
+                if (text) {
+                  const tags = text.match(/#[\w-]+/g)
+                  if (tags) {
+                    tags.forEach(tag => extractedTags.add(tag.substring(1)))
+                  }
+                }
+              }
+
+              // Prepare metadata from canvas context and extracted tags
+              const canvasContext = useCanvasStore.getState().canvasContext
+              const metadata: Record<string, any> = {
+                tags: Array.from(extractedTags),
+                timestamp: new Date().toISOString(),
+                userAgent: navigator.userAgent.substring(0, 50),
+              }
+
+              // Add canvas context metadata if available
+              if (canvasContext) {
+                if (canvasContext.title) metadata.project = canvasContext.title
+                if (canvasContext.domain) metadata.domain = canvasContext.domain
+                if (canvasContext.priority) metadata.priority = canvasContext.priority
+                if (canvasContext.tags && canvasContext.tags.length > 0) {
+                  metadata.contextTags = canvasContext.tags
+                }
+              }
+
               const response = await n8nService.sendToWebhook(
                 selectedElements,
                 allElements.length,
-                'process'
+                'process',
+                metadata
               )
 
               console.log('N8N webhook full response:', response)

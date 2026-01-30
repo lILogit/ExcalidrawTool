@@ -14,9 +14,29 @@ export interface N8NWebhookPayload {
     timestamp: number
     selectionCount: number
     totalElements: number
+    // Canvas context metadata (if configured)
+    canvasContext?: {
+      title?: string
+      description?: string
+      domain?: string
+      tags?: string[]
+      conventions?: string[]
+      priority?: string
+      project?: string
+    }
   }
   // Optional: Action to perform in N8N
   action?: string
+  // Optional: Custom metadata for workflow processing
+  metadata?: {
+    tags?: string[]
+    category?: string
+    priority?: 'low' | 'medium' | 'high' | 'critical'
+    status?: string
+    assignee?: string
+    sprint?: string
+    [key: string]: any
+  }
 }
 
 export interface N8NWebhookResponse {
@@ -221,7 +241,8 @@ class N8NService {
   async sendToWebhook(
     elements: ExcalidrawElement[],
     totalElementCount: number,
-    action?: string
+    action?: string,
+    customMetadata?: Record<string, any>
   ): Promise<N8NWebhookResponse> {
     if (!this.webhookUrl) {
       throw new Error('N8N webhook URL is not configured. Please set VITE_N8N_WEBHOOK_URL in your .env file.')
@@ -235,6 +256,21 @@ class N8NService {
         totalElements: totalElementCount,
       },
       action,
+      metadata: customMetadata || {},
+    }
+
+    // Add canvas context if available
+    const canvasContext = (window as any)?.excalidrawConfig?.canvasContext
+    if (canvasContext) {
+      payload.context.canvasContext = {
+        title: canvasContext.title,
+        description: canvasContext.description,
+        domain: canvasContext.domain,
+        tags: canvasContext.tags,
+        conventions: canvasContext.conventions,
+        priority: canvasContext.priority,
+        project: canvasContext.project,
+      }
     }
 
     if (this.debugEnabled) {
