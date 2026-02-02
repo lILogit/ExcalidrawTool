@@ -47,10 +47,12 @@ COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Set proper permissions
-RUN chown -R nginx:nginx /usr/share/nginx/html
+RUN mkdir -p /etc/nginx/ssl && \
+    chown -R nginx:nginx /usr/share/nginx/html /etc/nginx/ssl && \
+    chmod 755 /etc/nginx/ssl
 
-# Expose port 80
-EXPOSE 80
+# Expose ports
+EXPOSE 80 443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

@@ -1,0 +1,154 @@
+version: '3.8'
+
+# ===========================================
+# Hostinger Production Docker Compose Configuration
+# ===========================================
+# This file is optimized for production deployment on Hostinger VPS/Cloud hosting.
+# It includes SSL/HTTPS support, resource limits, healthchecks, and proper logging.
+#
+# Usage:
+#   1. Copy .env.hostinger.example to .env and configure your values
+#   2. Generate SSL certificates using Let's Encrypt (see README-HOSTINGER.md)
+#   3. Run: docker-compose -f docker-compose.hostinger.yml up -d --build
+#   4. Or use: ./deploy-hostinger.sh
+#
+# Documentation: See README-HOSTINGER.md for detailed deployment instructions.
+# ===========================================
+
+services:
+  # ===========================================
+  # Excalidraw AI Agent Web Application
+  # ===========================================
+  excalidraw-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # ===========================================
+        # AI Provider Configuration
+        # ===========================================
+        VITE_AI_PROVIDER: ${VITE_AI_PROVIDER:-anthropic}
+
+        # ===========================================
+        # Anthropic (Claude) Configuration
+        # ===========================================
+        VITE_ANTHROPIC_API_KEY: ${VITE_ANTHROPIC_API_KEY}
+        VITE_ANTHROPIC_MODEL: ${VITE_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+
+        # ===========================================
+        # Ollama Configuration (Local LLM)
+        # ===========================================
+        VITE_OLLAMA_BASE_URL: ${VITE_OLLAMA_BASE_URL:-http://localhost:11434}
+        VITE_OLLAMA_MODEL: ${VITE_OLLAMA_MODEL:-llama3.2}
+
+        # ===========================================
+        # Model Parameters (applies to all providers)
+        # ===========================================
+        VITE_AI_MAX_TOKENS: ${VITE_AI_MAX_TOKENS:-4096}
+        VITE_AI_TEMPERATURE: ${VITE_AI_TEMPERATURE:-0.7}
+        VITE_AI_TOP_P: ${VITE_AI_TOP_P:-0.9}
+        VITE_AI_TOP_K: ${VITE_AI_TOP_K:-40}
+        VITE_AI_REPEAT_PENALTY: ${VITE_AI_REPEAT_PENALTY:-1.1}
+        VITE_AI_MAX_RETRIES: ${VITE_AI_MAX_RETRIES:-3}
+        VITE_AI_RETRY_DELAY: ${VITE_AI_RETRY_DELAY:-1000}
+
+        # ===========================================
+        # Debug & Logging Configuration
+        # ===========================================
+        VITE_AI_DEBUG: ${VITE_AI_DEBUG:-false}
+        VITE_LOGGING_ENABLED: ${VITE_LOGGING_ENABLED:-true}
+        VITE_LOG_TO_CONSOLE: ${VITE_LOG_TO_CONSOLE:-false}
+        VITE_MAX_LOG_ENTRIES: ${VITE_MAX_LOG_ENTRIES:-500}
+
+        # ===========================================
+        # N8N Webhook Integration Configuration
+        # ===========================================
+        VITE_N8N_WEBHOOK_URL: ${VITE_N8N_WEBHOOK_URL:-}
+        VITE_N8N_WEBHOOK_TOKEN: ${VITE_N8N_WEBHOOK_TOKEN:-}
+        VITE_N8N_DEBUG: ${VITE_N8N_DEBUG:-false}
+        VITE_N8N_CALLBACK_URL: ${VITE_N8N_CALLBACK_URL}
+    image: excalidraw-ai-agent:latest
+    container_name: excalidraw-ai-agent
+    restart: always
+    ports:
+      # HTTP port (redirects to HTTPS)
+      - "${HOSTINGER_HTTP_PORT:-80}:80"
+      # HTTPS port
+      - "${HOSTINGER_HTTPS_PORT:-443}:443"
+    environment:
+      # ===========================================
+      # AI Provider Configuration
+      # ===========================================
+      VITE_AI_PROVIDER: ${VITE_AI_PROVIDER:-anthropic}
+
+      # ===========================================
+      # Anthropic (Claude) Configuration
+      # ===========================================
+      VITE_ANTHROPIC_API_KEY: ${VITE_ANTHROPIC_API_KEY}
+      VITE_ANTHROPIC_MODEL: ${VITE_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+
+      # ===========================================
+      # Ollama Configuration (Local LLM)
+      # ===========================================
+      VITE_OLLAMA_BASE_URL: ${VITE_OLLAMA_BASE_URL:-http://localhost:11434}
+      VITE_OLLAMA_MODEL: ${VITE_OLLAMA_MODEL:-llama3.2}
+
+      # ===========================================
+      # Model Parameters (applies to all providers)
+      # ===========================================
+      VITE_AI_MAX_TOKENS: ${VITE_AI_MAX_TOKENS:-4096}
+      VITE_AI_TEMPERATURE: ${VITE_AI_TEMPERATURE:-0.7}
+      VITE_AI_TOP_P: ${VITE_AI_TOP_P:-0.9}
+      VITE_AI_TOP_K: ${VITE_AI_TOP_K:-40}
+      VITE_AI_REPEAT_PENALTY: ${VITE_AI_REPEAT_PENALTY:-1.1}
+      VITE_AI_MAX_RETRIES: ${VITE_AI_MAX_RETRIES:-3}
+      VITE_AI_RETRY_DELAY: ${VITE_AI_RETRY_DELAY:-1000}
+
+      # ===========================================
+      # Debug & Logging Configuration
+      # ===========================================
+      VITE_AI_DEBUG: ${VITE_AI_DEBUG:-false}
+      VITE_LOGGING_ENABLED: ${VITE_LOGGING_ENABLED:-true}
+      VITE_LOG_TO_CONSOLE: ${VITE_LOG_TO_CONSOLE:-false}
+      VITE_MAX_LOG_ENTRIES: ${VITE_MAX_LOG_ENTRIES:-500}
+
+      # ===========================================
+      # N8N Webhook Integration Configuration
+      # ===========================================
+      VITE_N8N_WEBHOOK_URL: ${VITE_N8N_WEBHOOK_URL:-}
+      VITE_N8N_WEBHOOK_TOKEN: ${VITE_N8N_WEBHOOK_TOKEN:-}
+      VITE_N8N_DEBUG: ${VITE_N8N_DEBUG:-false}
+      VITE_N8N_CALLBACK_URL: ${VITE_N8N_CALLBACK_URL}
+    volumes:
+      # Mount SSL certificates (read-only)
+      # Generate using: certbot certonly --standalone -d your-domain.com
+      - ./ssl/fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
+      - ./ssl/privkey.pem:/etc/nginx/ssl/privkey.pem:ro
+      # Mount custom nginx config with SSL support
+      - ./nginx.hostinger.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - excalidraw-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '${HOSTINGER_CPU_LIMIT:-1.0}'
+          memory: ${HOSTINGER_MEMORY_LIMIT:-1G}
+        reservations:
+          cpus: '${HOSTINGER_CPU_RESERVE:-0.25}'
+          memory: ${HOSTINGER_MEMORY_RESERVE:-256M}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${HOSTINGER_LOG_MAX_SIZE:-10m}"
+        max-file: "${HOSTINGER_LOG_MAX_FILES:-3}"
+
+networks:
+  excalidraw-network:
+    driver: bridge
+    name: excalidraw-ai-agent-network
